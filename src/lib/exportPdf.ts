@@ -15,6 +15,9 @@ import {
 } from './geometry'
 import { wrapWords } from './wrapSvgText'
 
+const SHOP_FABRIC_PDF =
+  'https://www.sailrite.com/Fabrics?utm_source=sailrite_calculators&utm_medium=nesting&utm_campaign=fabric_nesting&utm_content=pdf_shop_button'
+
 /** PDF points per inch of fabric when drawing the nest (before fit-to-page). */
 export const DEFAULT_PT_PER_IN = 4
 
@@ -439,6 +442,26 @@ export function drawNest(
   }
 }
 
+/** Clickable Sailrite-blue button linking to shop fabric. Returns bottom Y. */
+function drawShopFabricButton(
+  doc: jsPDF,
+  x: number,
+  y: number,
+  opts?: { label?: string; width?: number },
+): number {
+  const label = opts?.label ?? 'Shop fabric at Sailrite'
+  const w = opts?.width ?? 200
+  const h = 28
+  doc.setFillColor(36, 40, 94) // Sailrite Blue #24285e
+  doc.roundedRect(x, y, w, h, 4, 4, 'F')
+  doc.setFont('helvetica', 'bold')
+  doc.setFontSize(11)
+  doc.setTextColor(255, 255, 255)
+  doc.text(label, x + w / 2, y + h / 2 + 3.5, { align: 'center' })
+  doc.link(x, y, w, h, { url: SHOP_FABRIC_PDF })
+  return y + h
+}
+
 function drawFooter(doc: jsPDF, margin: number, pageH: number): void {
   doc.setFontSize(7)
   doc.setTextColor(120, 120, 120)
@@ -446,11 +469,11 @@ function drawFooter(doc: jsPDF, margin: number, pageH: number): void {
   doc.text(
     'Estimate only. Double-check before cutting or ordering. Sailrite sells full yards.',
     margin,
-    pageH - 26,
+    pageH - 40,
   )
-  doc.setTextColor(36, 40, 94)
-  doc.textWithLink('Shop fabric & supplies at sailrite.com', margin, pageH - 16, {
-    url: 'https://www.sailrite.com/?utm_source=sailrite_calculators&utm_medium=nesting&utm_campaign=fabric_nesting&utm_content=pdf_footer',
+  drawShopFabricButton(doc, margin, pageH - 34, {
+    label: 'Shop fabric at Sailrite',
+    width: 190,
   })
 }
 
@@ -476,7 +499,7 @@ export function exportNestingPdf(input: ExportPdfInput): string {
   const pageW = doc.internal.pageSize.getWidth()
   const pageH = doc.internal.pageSize.getHeight()
   const margin = 40
-  const footerReserve = 28
+  const footerReserve = 48
   const widthNoteReserve = 14
 
   // Title
@@ -518,7 +541,11 @@ export function exportNestingPdf(input: ExportPdfInput): string {
   line('Used length:', `${fmtDim(used, unit)} ${unit} (${(used / 36).toFixed(2)} yd)`)
   line('Panels:', String(panels.length))
 
-  y += 6
+  y += 10
+  const shopLabel =
+    order > 0 ? `Shop ${order} yd of fabric at Sailrite` : 'Shop fabric at Sailrite'
+  y = drawShopFabricButton(doc, margin, y, { label: shopLabel, width: 240 }) + 14
+
   doc.setFont('helvetica', 'bold')
   doc.setFontSize(11)
   doc.setTextColor(36, 40, 94)
