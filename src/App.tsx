@@ -230,6 +230,24 @@ function formatSplitMessage(
   return `This cut piece (${displayFn(cutW)}×${displayFn(cutL)} ${unit}) is wider than the ${displayFn(fabricWidth)} ${unit} bolt in both orientations. Split the ${displayFn(s.overSize)} ${unit} side into ${s.pieceCount} panels of ~${displayFn(s.pieceCutApprox)} ${unit}${saNote} and nest the strips.`
 }
 
+
+function exportNestingPdfClick(opts: {
+  panels: Panel[]
+  fabricWidthIn: number
+  seamAllowanceIn: number
+  waste: number
+  unit: Unit
+  exact: number
+  order: number
+  patterned: boolean
+  hRepeatIn: number
+  vRepeatIn: number
+}) {
+  void import('./lib/exportPdf').then(({ exportNestingPdf }) => {
+    exportNestingPdf(opts)
+  })
+}
+
 export default function App() {
   const [unit, setUnit] = useState<Unit>('in')
   const [fabricWidthIn, setFabricWidthIn] = useState(54)
@@ -759,46 +777,61 @@ export default function App() {
 
   return (
     <div className="app">
-      <header className="top">
-        <div className="top-brand">
-          <div className="brand-mark">
+      <header className="app-header">
+        <div className="app-header-bar">
+          <div className="app-header-identity">
             <img src="/sailrite-logo.png" alt="Sailrite" className="brand-logo" />
             <span className="brand-sub">Calculators</span>
+            <span className="current-tool" aria-current="page">
+              Nesting
+            </span>
           </div>
-          <nav className="calc-nav" aria-label="Calculators">
-            <button type="button" className="calc-tab active" aria-current="page">
+
+          <nav className="calc-switch" aria-label="Calculators">
+            <button type="button" className="calc-switch-tab active" aria-current="page">
               Nesting
             </button>
-            <button type="button" className="calc-tab" disabled title="Coming soon">
+            <button
+              type="button"
+              className="calc-switch-tab calc-switch-tab--future"
+              disabled
+              title="Coming soon"
+            >
               Yardage
             </button>
-            <button type="button" className="calc-tab" disabled title="Coming soon">
+            <button
+              type="button"
+              className="calc-switch-tab calc-switch-tab--future"
+              disabled
+              title="Coming soon"
+            >
               Bias
             </button>
-            <button type="button" className="calc-tab" disabled title="Coming soon">
+            <button
+              type="button"
+              className="calc-switch-tab calc-switch-tab--future"
+              disabled
+              title="Coming soon"
+            >
               Foam
             </button>
-            <span className="calc-more" title="More calculators coming soon">
-              More soon
-            </span>
           </nav>
-        </div>
-        <div className="top-actions">
-          <div className="yards">
-            <span className="yards-exact">{exact.toFixed(2)} yd</span>
-            <span className="yards-order">Order {order} yd</span>
-            <span className="yards-meta">
-              Used {display(used)} {unit}
-              {waste > 0 ? ` · +${waste}%` : ''}
-            </span>
-          </div>
-          <button
-            type="button"
-            className="export-pdf"
-            title="Download nest as PDF"
-            onClick={() => {
-              void import('./lib/exportPdf').then(({ exportNestingPdf }) => {
-                exportNestingPdf({
+
+          <div className="app-header-status">
+            <div className="yards" aria-label="Yardage summary">
+              <span className="yards-exact">{exact.toFixed(2)} yd</span>
+              <span className="yards-order">Order {order} yd</span>
+              <span className="yards-meta">
+                Used {display(used)} {unit}
+                {waste > 0 ? ` · +${waste}%` : ''}
+              </span>
+            </div>
+            <button
+              type="button"
+              className="export-pdf"
+              title="Download nest as PDF"
+              onClick={() =>
+                exportNestingPdfClick({
                   panels,
                   fabricWidthIn,
                   seamAllowanceIn,
@@ -810,11 +843,11 @@ export default function App() {
                   hRepeatIn,
                   vRepeatIn,
                 })
-              })
-            }}
-          >
-            Export PDF
-          </button>
+              }
+            >
+              Export PDF
+            </button>
+          </div>
         </div>
       </header>
 

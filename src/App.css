@@ -28,28 +28,30 @@ body { margin: 0; background: var(--sr-bg); }
   overflow: hidden;
 }
 
-.top {
+/* App header: identity | calculator switch | status + Export */
+.app-header {
   flex-shrink: 0;
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  gap: 0.65rem 1rem;
-  padding: 0.4rem 0.85rem;
+  position: sticky;
+  top: 0;
+  z-index: 30;
   background: #000;
   color: #fff;
-  min-height: 0;
 }
-.top-brand {
+.app-header-bar {
   display: flex;
   align-items: center;
-  gap: 0.75rem;
-  min-width: 0;
-  flex-wrap: wrap;
+  justify-content: space-between;
+  gap: 0.75rem 1.25rem;
+  padding: 0.45rem 0.9rem;
+  min-height: 52px;
+  flex-wrap: nowrap;
 }
-.brand-mark {
+.app-header-identity {
   display: flex;
   align-items: center;
   gap: 0.5rem;
+  min-width: 0;
+  flex-shrink: 0;
   white-space: nowrap;
 }
 .brand-logo {
@@ -58,59 +60,62 @@ body { margin: 0; background: var(--sr-bg); }
   display: block;
   object-fit: contain;
 }
-.brand-name {
-  font-size: 1.05rem;
-  font-weight: 700;
-  letter-spacing: -0.01em;
-  line-height: 1.15;
-}
 .brand-sub {
   font-size: 0.78rem;
   font-weight: 500;
   color: rgba(255, 255, 255, 0.65);
   letter-spacing: 0.02em;
 }
-.calc-nav {
+/* Mobile-only Nesting title (desktop uses calc-switch) */
+.current-tool {
+  display: none;
+  margin-left: 0.15rem;
+  padding: 0.2rem 0.55rem;
+  border-radius: 999px;
+  background: #fff;
+  color: #111;
+  font-size: 0.75rem;
+  font-weight: 700;
+  line-height: 1.2;
+}
+.calc-switch {
   display: flex;
   align-items: center;
-  gap: 0.2rem;
-  flex-wrap: wrap;
+  justify-content: center;
+  gap: 0.25rem;
+  flex: 1 1 auto;
+  min-width: 0;
+  flex-wrap: nowrap;
 }
-.calc-tab {
+.calc-switch-tab {
   border: 1px solid transparent;
   background: transparent;
-  color: rgba(255, 255, 255, 0.65);
+  color: rgba(255, 255, 255, 0.7);
   border-radius: 999px;
-  padding: 0.2rem 0.55rem;
-  font-size: 0.75rem;
+  padding: 0.28rem 0.7rem;
+  font-size: 0.78rem;
   font-weight: 600;
   line-height: 1.2;
   cursor: pointer;
+  white-space: nowrap;
 }
-.calc-tab:hover:not(:disabled) {
+.calc-switch-tab:hover:not(:disabled) {
   background: rgba(255, 255, 255, 0.1);
   color: #fff;
 }
-.calc-tab.active {
+.calc-switch-tab.active {
   background: #fff;
   color: #111;
   border-color: #fff;
 }
-.calc-tab:disabled {
-  opacity: 0.4;
+.calc-switch-tab:disabled,
+.calc-switch-tab--future {
+  opacity: 0.38;
   cursor: not-allowed;
   background: transparent;
   color: rgba(255, 255, 255, 0.45);
 }
-.calc-more {
-  font-size: 0.68rem;
-  opacity: 0.45;
-  padding: 0 0.35rem;
-  white-space: nowrap;
-  font-style: italic;
-  color: rgba(255, 255, 255, 0.55);
-}
-.top-actions {
+.app-header-status {
   display: flex;
   align-items: center;
   gap: 0.65rem;
@@ -119,25 +124,26 @@ body { margin: 0; background: var(--sr-bg); }
 .yards {
   display: flex;
   align-items: baseline;
-  flex-wrap: wrap;
+  flex-wrap: nowrap;
   justify-content: flex-end;
   gap: 0.35rem 0.65rem;
   text-align: right;
   color: #fff;
 }
-.yards-exact { font-size: 1.25rem; font-weight: 700; letter-spacing: -0.02em; }
+.yards-exact { font-size: 1.15rem; font-weight: 700; letter-spacing: -0.02em; }
 .yards-order { font-size: 0.85rem; font-weight: 600; color: rgba(255, 255, 255, 0.9); }
-.yards-meta { font-size: 0.72rem; color: rgba(255, 255, 255, 0.65); }
+.yards-meta { font-size: 0.72rem; color: rgba(255, 255, 255, 0.65); white-space: nowrap; }
 button.export-pdf {
   flex-shrink: 0;
   background: var(--sr-action);
   border: 1px solid var(--sr-action);
   color: #fff;
   border-radius: 6px;
-  padding: 0.28rem 0.65rem;
+  padding: 0.35rem 0.75rem;
   font-size: 0.78rem;
   font-weight: 600;
   white-space: nowrap;
+  min-height: 36px;
 }
 button.export-pdf:hover {
   background: var(--sr-action-hover);
@@ -151,10 +157,9 @@ button.export-pdf:hover {
   padding: 0.28rem 1rem;
   font-size: 0.75rem;
   color: var(--sr-text);
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  line-height: 1.3;
+  white-space: normal;
+  overflow: visible;
+  line-height: 1.35;
 }
 
 .layout {
@@ -480,26 +485,14 @@ button.clear-all {
 
 /* Tablet / mid: still 3-col until ~800px, but allow header wrap + no overflow */
 @media (max-width: 960px) {
-  .top {
-    flex-wrap: wrap;
-    align-items: flex-start;
+  .app-header-bar {
+    gap: 0.55rem 0.85rem;
+    padding: 0.45rem 0.75rem;
   }
-  .top-brand { flex: 1 1 auto; }
-  .top-actions {
-    flex-wrap: wrap;
-    justify-content: space-between;
-    flex-shrink: 1;
-    width: 100%;
-  }
-  .yards { justify-content: flex-start; text-align: left; }
-  .disclaimer { white-space: normal; }
-  .calc-tab {
-    min-height: 36px;
-    padding: 0.4rem 0.7rem;
-  }
+  .yards-meta { display: none; }
   button.export-pdf {
-    min-height: 44px;
-    padding: 0.5rem 0.85rem;
+    min-height: 40px;
+    padding: 0.45rem 0.8rem;
   }
 }
 
@@ -547,35 +540,35 @@ button.clear-all {
     touch-action: pan-x pan-y;
   }
 
-  .top {
-    flex-direction: column;
-    align-items: stretch;
+  .app-header-bar {
+    flex-wrap: nowrap;
+    align-items: center;
     gap: 0.5rem;
     padding: 0.5rem 0.75rem;
-  }
-  .top-brand {
-    flex-direction: column;
-    align-items: flex-start;
-    gap: 0.45rem;
+    min-height: 52px;
   }
   .brand-logo { height: 24px; }
-  .calc-nav {
-    width: 100%;
-    gap: 0.35rem;
+  /* Hide unfinished calc tabs; Nesting shown as current-tool chip */
+  .calc-switch { display: none; }
+  .current-tool { display: inline-flex; align-items: center; min-height: 28px; }
+  .app-header-identity { flex: 1 1 auto; min-width: 0; }
+  .app-header-status {
+    gap: 0.45rem;
+    flex-shrink: 0;
   }
-  .calc-tab {
-    min-height: 44px;
-    padding: 0.5rem 0.75rem;
-    font-size: 0.8rem;
+  .yards {
+    flex-wrap: wrap;
+    justify-content: flex-end;
+    gap: 0.15rem 0.4rem;
+    max-width: 9.5rem;
   }
-  .calc-more { display: none; }
-  .top-actions {
-    width: 100%;
-    gap: 0.5rem;
-  }
-  .yards-exact { font-size: 1.1rem; }
+  .yards-exact { font-size: 1rem; }
+  .yards-order { font-size: 0.78rem; }
+  .yards-meta { display: none; }
   button.export-pdf {
     min-height: 44px;
+    min-width: 44px;
+    padding: 0.5rem 0.75rem;
     flex: 0 0 auto;
   }
 
@@ -627,12 +620,17 @@ button.clear-all {
   .sidebar.right {
     padding: 0.65rem;
   }
-  .yards-meta {
-    width: 100%;
-  }
   .brand-sub {
     font-size: 0.72rem;
   }
+  .app-header-bar {
+    padding: 0.45rem 0.55rem;
+  }
+  .yards {
+    max-width: 7.5rem;
+  }
+  .yards-exact { font-size: 0.95rem; }
+  .yards-order { font-size: 0.72rem; }
 }
 
 .warn-banner {
