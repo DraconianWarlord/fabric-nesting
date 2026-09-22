@@ -1,9 +1,15 @@
 import { describe, expect, it } from 'vitest'
+import { jsPDF } from 'jspdf'
+import type { Panel } from './geometry'
+import { panelFootprint, panelPolygon } from './geometry'
 import {
   DEFAULT_PT_PER_IN,
   FIRST_NEST_PAGE,
   chooseNestPageScale,
+  clipPolygonToXRange,
+  clipPolygonToYRange,
   computeNestSlices,
+  drawNest,
   fabricToPdf,
   fitNestScale,
   formatPanelNestDim,
@@ -272,5 +278,174 @@ describe('chooseNestPageScale', () => {
       // each non-final slice should be about 2 yards with the 600/9.8 case
       expect(slices[i].endIn - slices[i].startIn).toBeGreaterThanOrEqual(36)
     }
+  })
+})
+
+describe('clipPolygonToYRange', () => {
+  it('clips a unit square spanning y=0..2 against slice 0.5..1.5 to a quadrilateral', () => {
+    const square = [
+      { x: 0, y: 0 },
+      { x: 1, y: 0 },
+      { x: 1, y: 2 },
+      { x: 0, y: 2 },
+    ]
+    const clipped = clipPolygonToYRange(square, 0.5, 1.5)
+    expect(clipped.length).toBe(4)
+    for (const pt of clipped) {
+      expect(pt.y).toBeGreaterThanOrEqual(0.5 - 1e-9)
+      expect(pt.y).toBeLessThanOrEqual(1.5 + 1e-9)
+    }
+    // Expected corners (order may vary with SH winding; compare as a set)
+    const sorted = [...clipped].sort((a, b) => a.y - b.y || a.x - b.x)
+    expect(sorted[0].y).toBeCloseTo(0.5)
+    expect(sorted[1].y).toBeCloseTo(0.5)
+    expect(sorted[2].y).toBeCloseTo(1.5)
+    expect(sorted[3].y).toBeCloseTo(1.5)
+    expect(sorted.filter((p) => Math.abs(p.y - 0.5) < 1e-9).map((p) => p.x).sort()).toEqual([
+      0, 1,
+    ])
+    expect(sorted.filter((p) => Math.abs(p.y - 1.5) < 1e-9).map((p) => p.x).sort()).toEqual([
+      0, 1,
+    ])
+  })
+
+  it('clips a tall trap to a 36" yard slice leaving ≥3 points inside the strip', () => {
+    // Trap taller than one yard: top narrow at y=0, bottom wide at y=48
+    const trap = [
+      { x: 5, y: 0 },
+      { x: 15, y: 0 },
+      { x: 20, y: 48 },
+      { x: 0, y: 48 },
+    ]
+    const sliceStart = 36
+    const sliceEnd = 72
+    const clipped = clipPolygonToYRange(trap, sliceStart, sliceEnd)
+    expect(clipped.length).toBeGreaterThanOrEqual(3)
+    for (const pt of clipped) {
+      expect(pt.y).toBeGreaterThanOrEqual(sliceStart - 1e-6)
+      expect(pt.y).toBeLessThanOrEqual(sliceEnd + 1e-6)
+    }
+    // Only the portion from y=36..48 remains (trap ends at 48)
+    expect(Math.max(...clipped.map((p) => p.y))).toBeCloseTo(48)
+    expect(Math.min(...clipped.map((p) => p.y))).toBeCloseTo(36)
+  })
+
+  it('regression: every clipped vertex of a slice-spanning trap stays in [sliceStart, sliceEnd]', () => {
+    const sliceStart = 36
+    const sliceEnd = 72
+    // Trap straddles the 36" break (y=20..50)
+    const trap = [
+      { x: 4, y: 20 },
+      { x: 16, y: 20 },
+      { x: 20, y: 50 },
+      { x: 0, y: 50 },
+    ]
+    const clipped = clipPolygonToYRange(trap, sliceStart, sliceEnd)
+    expect(clipped.length).toBeGreaterThanOrEqual(3)
+    for (const pt of clipped) {
+      expect(pt.y).toBeGreaterThanOrEqual(sliceStart - 1e-6)
+      expect(pt.y).toBeLessThanOrEqual(sliceEnd + 1e-6)
+    }
+  })
+
+  it('returns empty / <3 when polygon is entirely outside the strip', () => {
+    const square = [
+      { x: 0, y: 0 },
+      { x: 1, y: 0 },
+      { x: 1, y: 1 },
+      { x: 0, y: 1 },
+    ]
+    expect(clipPolygonToYRange(square, 2, 3).length).toBeLessThan(3)
+  })
+})
+
+describe('clipPolygonToXRange', () => {
+  it('clips against an X strip', () => {
+    const square = [
+      { x: 0, y: 0 },
+      { x: 2, y: 0 },
+      { x: 2, y: 1 },
+      { x: 0, y: 1 },
+    ]
+    const clipped = clipPolygonToXRange(square, 0.5, 1.5)
+    expect(clipped.length).toBe(4)
+    for (const pt of clipped) {
+      expect(pt.x).toBeGreaterThanOrEqual(0.5 - 1e-9)
+      expect(pt.x).toBeLessThanOrEqual(1.5 + 1e-9)
+    }
+  })
+})
+
+describe('drawNest trap slice clip', () => {
+  it('straddling trap does not throw; clipped poly stays within slice Y before PDF convert', () => {
+    const sliceStart = 36
+    const sliceEnd = 72
+    const trapPanel: Panel = {
+      id: 't1',
+      label: 'Trap',
+      kind: 'trap',
+      width: 20,
+      length: 40,
+      topWidth: 10,
+      bottomWidth: 20,
+      x: 5,
+      y: 20, // spans 20..60 → crosses 36" break
+      rotation: 0,
+      flippedH: false,
+      flippedV: false,
+      color: '#ff0000',
+    }
+    const poly = panelPolygon(trapPanel)
+    const clipped = clipPolygonToYRange(poly, sliceStart, sliceEnd)
+    expect(clipped.length).toBeGreaterThanOrEqual(3)
+    for (const pt of clipped) {
+      expect(pt.y).toBeGreaterThanOrEqual(sliceStart - 1e-6)
+      expect(pt.y).toBeLessThanOrEqual(sliceEnd + 1e-6)
+    }
+
+    const doc = new jsPDF({ orientation: 'portrait', unit: 'pt', format: 'letter' })
+    const scale = { originX: 40, originY: 60, ptPerIn: 4 }
+    expect(() =>
+      drawNest(doc, [trapPanel], 54, 60, scale, 'in', {
+        sliceStartIn: sliceStart,
+        sliceEndIn: sliceEnd,
+        showWidthNote: false,
+      }),
+    ).not.toThrow()
+  })
+
+  it('panelPolygon trap vertices are correct for rotation 0 and 90', () => {
+    const base: Panel = {
+      id: 't',
+      label: 'T',
+      kind: 'trap',
+      width: 20,
+      length: 10,
+      topWidth: 10,
+      bottomWidth: 20,
+      x: 0,
+      y: 0,
+      rotation: 0,
+      flippedH: false,
+      flippedV: false,
+      color: '#000000',
+    }
+    const r0 = panelPolygon(base)
+    expect(r0).toEqual([
+      { x: 5, y: 0 },
+      { x: 15, y: 0 },
+      { x: 20, y: 10 },
+      { x: 0, y: 10 },
+    ])
+    const r90 = panelPolygon({ ...base, rotation: 90 })
+    // 90° CW then normalize AABB to (0,0): footprint 10×20
+    expect(panelFootprint({ ...base, rotation: 90 })).toEqual({ w: 10, h: 20 })
+    expect(r90).toHaveLength(4)
+    const ys = r90.map((p) => p.y)
+    const xs = r90.map((p) => p.x)
+    expect(Math.min(...ys)).toBeCloseTo(0)
+    expect(Math.min(...xs)).toBeCloseTo(0)
+    expect(Math.max(...xs)).toBeCloseTo(10)
+    expect(Math.max(...ys)).toBeCloseTo(20)
   })
 })

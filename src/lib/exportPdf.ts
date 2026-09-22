@@ -51,6 +51,103 @@ export function fabricToPdf(
   }
 }
 
+
+/** Point in fabric inches (or any linear space). */
+export interface PolyPt {
+  x: number
+  y: number
+}
+
+/**
+ * Sutherland–Hodgman clip of a polygon against one half-plane.
+ * `inside` / `intersect` define the clip edge.
+ */
+function clipPolyHalfPlane(
+  poly: PolyPt[],
+  inside: (p: PolyPt) => boolean,
+  intersect: (a: PolyPt, b: PolyPt) => PolyPt,
+): PolyPt[] {
+  if (poly.length === 0) return []
+  const out: PolyPt[] = []
+  for (let i = 0; i < poly.length; i++) {
+    const cur = poly[i]
+    const prev = poly[(i + poly.length - 1) % poly.length]
+    const curIn = inside(cur)
+    const prevIn = inside(prev)
+    if (curIn) {
+      if (!prevIn) out.push(intersect(prev, cur))
+      out.push(cur)
+    } else if (prevIn) {
+      out.push(intersect(prev, cur))
+    }
+  }
+  return out
+}
+
+function lerpAtY(a: PolyPt, b: PolyPt, y: number): PolyPt {
+  const dy = b.y - a.y
+  if (Math.abs(dy) < 1e-15) return { x: a.x, y }
+  const t = (y - a.y) / dy
+  return { x: a.x + t * (b.x - a.x), y }
+}
+
+function lerpAtX(a: PolyPt, b: PolyPt, x: number): PolyPt {
+  const dx = b.x - a.x
+  if (Math.abs(dx) < 1e-15) return { x, y: a.y }
+  const t = (x - a.x) / dx
+  return { x, y: a.y + t * (b.y - a.y) }
+}
+
+/**
+ * Clip a polygon to the closed horizontal strip y ∈ [yMin, yMax]
+ * (Sutherland–Hodgman against y=yMin and y=yMax).
+ * Returns [] if nothing remains; callers should skip draw when length < 3.
+ */
+export function clipPolygonToYRange(
+  poly: PolyPt[],
+  yMin: number,
+  yMax: number,
+): PolyPt[] {
+  if (poly.length === 0) return []
+  if (!(yMax >= yMin)) return []
+  const eps = 1e-12
+  let result = clipPolyHalfPlane(
+    poly,
+    (p) => p.y >= yMin - eps,
+    (a, b) => lerpAtY(a, b, yMin),
+  )
+  result = clipPolyHalfPlane(
+    result,
+    (p) => p.y <= yMax + eps,
+    (a, b) => lerpAtY(a, b, yMax),
+  )
+  return result
+}
+
+/**
+ * Clip a polygon to the closed vertical strip x ∈ [xMin, xMax].
+ */
+export function clipPolygonToXRange(
+  poly: PolyPt[],
+  xMin: number,
+  xMax: number,
+): PolyPt[] {
+  if (poly.length === 0) return []
+  if (!(xMax >= xMin)) return []
+  const eps = 1e-12
+  let result = clipPolyHalfPlane(
+    poly,
+    (p) => p.x >= xMin - eps,
+    (a, b) => lerpAtX(a, b, xMin),
+  )
+  result = clipPolyHalfPlane(
+    result,
+    (p) => p.x <= xMax + eps,
+    (a, b) => lerpAtX(a, b, xMax),
+  )
+  return result
+}
+
 /**
  * Fit nest width into a page box. Height is not forced to fit — callers paginate
  * tall bolts with {@link computeNestSlices}.
@@ -398,16 +495,22 @@ export function drawNest(
     doc.setLineWidth(0.6)
 
     if (isTrap(p)) {
-      const poly = panelPolygon(p)
-      const pts = poly.map((pt) => fabricToPdf(pt.x, pt.y, scale, sliceStart))
-      const anyIn = poly.some((pt) => pt.y >= sliceStart - 1e-6 && pt.y <= sliceEnd + 1e-6)
-      const spans = py1 < sliceStart && py2 > sliceEnd
-      if ((anyIn || spans) && pts.length >= 3) {
+      // Clip cut polygon to this page's fabric Y slice (and bolt X) before PDF transform.
+      // Without this, unclipped vertices map outside the bolt and draw huge skewed triangles.
+      let poly = clipPolygonToYRange(panelPolygon(p), sliceStart, sliceEnd)
+      poly = clipPolygonToXRange(poly, 0, fabricWidthIn)
+      if (poly.length >= 3) {
+        const pts = poly.map((pt) => fabricToPdf(pt.x, pt.y, scale, sliceStart))
         const deltas: number[][] = []
         for (let i = 1; i < pts.length; i++) {
           deltas.push([pts[i].x - pts[i - 1].x, pts[i].y - pts[i - 1].y])
         }
+        // Belt-and-suspenders: PDF clip to bolt slice so nothing bleeds past the rect.
+        doc.saveGraphicsState()
+        doc.rect(scale.originX, scale.originY, boltWpt, boltHpt)
+        doc.clip()
         doc.lines(deltas, pts[0].x, pts[0].y, [1, 1], 'FD', true)
+        doc.restoreGraphicsState()
       }
     } else {
       doc.rect(x, y, w, h, 'FD')
