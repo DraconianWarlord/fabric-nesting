@@ -1027,7 +1027,7 @@ export default function App() {
               <figure className="trap-dims-figure" aria-label="Trapezoid finished dimensions">
                 <svg
                   className="trap-dims-svg"
-                  viewBox="0 0 320 260"
+                  viewBox="0 0 320 235"
                   role="img"
                   aria-hidden="true"
                 >
@@ -1084,16 +1084,6 @@ export default function App() {
                     transform="rotate(90 308 120)"
                   >
                     Height
-                  </text>
-                  <text
-                    x="160"
-                    y="248"
-                    textAnchor="middle"
-                    fill="#444"
-                    fontSize="12"
-                    fontFamily="system-ui,sans-serif"
-                  >
-                    Finished sizes · cut adds 2×seam on each
                   </text>
                 </svg>
               </figure>
