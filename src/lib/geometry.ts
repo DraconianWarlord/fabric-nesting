@@ -863,9 +863,13 @@ function aabbBlfCandidates(
   }
 }
 
+/** Hard cap on poly nest (x,y) evaluations — prevents UI freezes. */
+const POLY_SPOT_CANDIDATE_CAP = 1200
+
 /**
- * Denser nest candidates for trap/irregular: AABBs may overlap while polygons do not.
- * Returns expanded x/y grids plus explicit (x,y) pairs (vertex-to-vertex / edge nest).
+ * Denser nest candidates for trap/irregular as explicit (x,y) pairs.
+ * IMPORTANT: do NOT expand partial-overlap steps into separate x/y grids then
+ * take the cartesian product — that froze Auto-Nest (tens of thousands of SAT checks).
  */
 function polyNestCandidates(
   panel: Panel,
@@ -875,58 +879,61 @@ function polyNestCandidates(
 ): { xs: number[]; ys: number[]; pairs: { x: number; y: number }[] } {
   const fp = panelFootprint(panel)
   const { xs: baseXs, ys: baseYs } = aabbBlfCandidates(fp.w, fabricWidth, existing, gap)
-  const xs = new Set<number>(baseXs)
-  const ys = new Set<number>(baseYs)
+  // Keep classic BLF grid small (AABB corners only — already in baseXs/baseYs).
+  const xs = dedupeSorted(baseXs.filter((x) => x + fp.w <= fabricWidth + 1e-6))
+  const ys = dedupeSorted(baseYs.filter((y) => y >= -1e-9))
   const pairs: { x: number; y: number }[] = []
 
-  // Partial-overlap steps (~fp/4 or 0.5–1") so AABBs can nest while polygons clear.
-  const stepX = Math.max(0.5, Math.min(1, fp.w / 4))
-  const stepY = Math.max(0.5, Math.min(1, fp.h / 4))
-
-  for (const p of existing) {
-    const b = panelBounds(p)
-    for (let x = b.x1 - fp.w + stepX; x < b.x2 + gap + 1e-9; x += stepX) {
-      if (x >= -1e-9 && x + fp.w <= fabricWidth + 1e-6) xs.add(x)
-    }
-    xs.add(b.x1 - fp.w + gap)
-    xs.add(b.x2 + gap - fp.w)
-    for (let y = b.y1 - fp.h + stepY; y < b.y2 + gap + 1e-9; y += stepY) {
-      if (y >= -1e-9) ys.add(y)
-    }
-    ys.add(b.y1 - fp.h + gap)
-    ys.add(b.y2 + gap - fp.h)
+  const pushPair = (x: number, y: number) => {
+    if (x >= -1e-9 && y >= -1e-9 && x + fp.w <= fabricWidth + 1e-6) pairs.push({ x, y })
   }
 
-  // Local oriented polygon at origin (same flips/rotation as panel).
+  // Partial-overlap as PAIRS against each existing AABB (not a full x×y grid).
+  const stepX = Math.max(0.75, Math.min(1.5, fp.w / 3))
+  const stepY = Math.max(0.75, Math.min(1.5, fp.h / 3))
+  for (const p of existing) {
+    const b = panelBounds(p)
+    const yAnchors = [0, Math.max(0, b.y1), Math.max(0, b.y2 + gap), Math.max(0, b.y2 + gap - fp.h)]
+    for (let x = b.x1 - fp.w + stepX; x < b.x2 + gap + 1e-9; x += stepX) {
+      for (const y of yAnchors) pushPair(x, y)
+    }
+    const xAnchors = [
+      0,
+      Math.max(0, b.x1),
+      Math.max(0, b.x2 + gap),
+      Math.max(0, b.x1 - fp.w + gap),
+      Math.max(0, b.x2 + gap - fp.w),
+    ].filter((x) => x + fp.w <= fabricWidth + 1e-6)
+    for (let y = b.y1 - fp.h + stepY; y < b.y2 + gap + 1e-9; y += stepY) {
+      if (y < -1e-9) continue
+      for (const x of xAnchors) pushPair(x, y)
+    }
+  }
+
   const localPoly = panelPolygon({ ...panel, x: 0, y: 0 })
 
   for (const other of existing) {
-    const otherPoly = isPolyPanel(other) || isCircle(other)
-      ? panelPolygon(other)
-      : (() => {
-          const b = panelBounds(other)
-          return [
-            { x: b.x1, y: b.y1 },
-            { x: b.x2, y: b.y1 },
-            { x: b.x2, y: b.y2 },
-            { x: b.x1, y: b.y2 },
-          ] as Point[]
-        })()
+    const otherPoly =
+      isPolyPanel(other) || isCircle(other)
+        ? panelPolygon(other)
+        : (() => {
+            const b = panelBounds(other)
+            return [
+              { x: b.x1, y: b.y1 },
+              { x: b.x2, y: b.y1 },
+              { x: b.x2, y: b.y2 },
+              { x: b.x1, y: b.y2 },
+            ] as Point[]
+          })()
 
     // Vertex-to-vertex translations.
     for (const ev of otherPoly) {
       for (const lv of localPoly) {
-        const x = ev.x - lv.x
-        const y = ev.y - lv.y
-        if (x >= -1e-9 && y >= -1e-9 && x + fp.w <= fabricWidth + 1e-6) {
-          pairs.push({ x, y })
-          xs.add(x)
-          ys.add(y)
-        }
+        pushPair(ev.x - lv.x, ev.y - lv.y)
       }
     }
 
-    // Edge-against-edge: nearly-parallel edges, offset by gap along normal, endpoints touch.
+    // Edge-against-edge (near-parallel), gap along normal.
     if (!isPolyPanel(other) && !isCircle(other)) continue
     for (let i = 0; i < otherPoly.length; i++) {
       const e0 = otherPoly[i]
@@ -952,7 +959,6 @@ function polyNestCandidates(
         const nuy = ndy / nlen
         const align = eux * nux + euy * nuy
         if (Math.abs(Math.abs(align) - 1) > 0.02) continue
-
         for (const nrm of normals) {
           for (const [ea, na] of [
             [e0, n0],
@@ -960,24 +966,14 @@ function polyNestCandidates(
             [e1, n0],
             [e1, n1],
           ] as const) {
-            const x = ea.x + nrm.x * gap - na.x
-            const y = ea.y + nrm.y * gap - na.y
-            if (x >= -1e-9 && y >= -1e-9 && x + fp.w <= fabricWidth + 1e-6) {
-              pairs.push({ x, y })
-              xs.add(x)
-              ys.add(y)
-            }
+            pushPair(ea.x + nrm.x * gap - na.x, ea.y + nrm.y * gap - na.y)
           }
         }
       }
     }
   }
 
-  return {
-    xs: dedupeSorted([...xs].filter((x) => x + fp.w <= fabricWidth + 1e-6)),
-    ys: dedupeSorted([...ys]),
-    pairs: dedupePoints(pairs),
-  }
+  return { xs, ys, pairs: dedupePoints(pairs) }
 }
 
 function scoreBetter(
@@ -1189,14 +1185,22 @@ export function findBestSpotForPanel(
     for (const y of c.ys) for (const x of c.xs) candidatePoints.push({ x, y })
   } else if (isPolyPanel(panel)) {
     const c = polyNestCandidates(panel, fabricWidth, existing, gap)
+    // Small AABB BLF grid only (xs/ys are corner-based, not stepped).
     for (const y of c.ys) for (const x of c.xs) candidatePoints.push({ x, y })
-    for (const p of c.pairs) candidatePoints.push(p)
+    for (const pt of c.pairs) candidatePoints.push(pt)
   } else {
     const c = aabbBlfCandidates(w, fabricWidth, existing, gap)
     for (const y of c.ys) for (const x of c.xs) candidatePoints.push({ x, y })
   }
 
-  const unique = dedupePoints(candidatePoints)
+  // Prefer lower-y first; cap evaluations so Auto-Nest never freezes the UI.
+  let unique = dedupePoints(candidatePoints).filter(
+    (c) => c.x >= -1e-9 && c.y >= -1e-9 && c.x + w <= fabricWidth + 1e-6,
+  )
+  unique.sort((a, b) => a.y - b.y || a.x - b.x)
+  if (unique.length > POLY_SPOT_CANDIDATE_CAP) {
+    unique = unique.slice(0, POLY_SPOT_CANDIDATE_CAP)
+  }
 
   let best: { x: number; y: number } | null = null
   let bestYh = Infinity
@@ -1204,8 +1208,8 @@ export function findBestSpotForPanel(
   let bestX = Infinity
 
   for (const { x, y } of unique) {
-    if (x < -1e-9 || x + w > fabricWidth + 1e-6) continue
-    if (y < -1e-9) continue
+    // Prune: nothing at this y (or below) can beat current best used-length.
+    if (y + h >= bestYh - 1e-9 && y > bestY + 1e-9) continue
     const probe = makeProbeFromPanel(panel, x, y)
     if (offBolt(probe, fabricWidth) || overlapsAny(probe, existing)) continue
     const yh = y + h
@@ -1531,12 +1535,11 @@ function posesToTry(panel: Panel, fabricWidth: number): NestPose[] {
   }
 
   if (isPolyPanel(panel)) {
-    const rots: Array<0 | 90 | 180 | 270> = [0, 90, 180, 270]
+    // Keep pose count modest (UI freeze risk): 0/90/180 × identity/flipH.
+    const rots: Array<0 | 90 | 180 | 270> = [0, 90, 180]
     const flips: Array<{ flippedH: boolean; flippedV: boolean }> = [
       { flippedH: false, flippedV: false },
       { flippedH: true, flippedV: false },
-      { flippedH: false, flippedV: true },
-      { flippedH: true, flippedV: true },
     ]
     const out: NestPose[] = []
     for (const rotation of rots) {
@@ -1724,7 +1727,10 @@ export function autoNestCandidates(
     }
   }
 
-  for (let seed = 1; seed <= 24; seed++) {
+  // Fewer shuffles when trap/irregular present — each pack is much heavier.
+  const hasPoly = panels.some(isPolyPanel)
+  const shuffleN = hasPoly ? 4 : 24
+  for (let seed = 1; seed <= shuffleN; seed++) {
     const shuffled = seededShuffle(panels, seed)
     raw.push(packOrdered(shuffled, fabricWidth, gap, chooseMinUsed, hRepeat, vRepeat))
   }
