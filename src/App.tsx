@@ -900,7 +900,7 @@ export default function App() {
       </header>
 
       {actionHint && (
-        <div className="action-hint" role="status">
+        <div className="action-hint" role="alert">
           {actionHint}
           <button type="button" className="linkish" onClick={() => setActionHint(null)}>
             Dismiss

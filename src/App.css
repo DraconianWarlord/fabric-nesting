@@ -731,7 +731,7 @@ button.clear-all {
   }
 
   .action-hint {
-    margin: 0 0.5rem 0.4rem;
+    margin: 0.55rem 0.5rem 0.4rem;
     flex-wrap: wrap;
   }
 
@@ -782,16 +782,25 @@ button.clear-all {
   align-items: center;
   justify-content: space-between;
   gap: 0.75rem;
-  margin: 0 0.85rem 0.5rem;
-  padding: 0.45rem 0.7rem;
+  /* Top margin so it doesn't fuse with the sticky black header */
+  margin: 0.65rem 0.85rem 0.5rem;
+  padding: 0.55rem 0.75rem;
   border-radius: 8px;
-  background: #f0f0f0;
-  border: 1px solid #d0d0d0;
-  color: var(--sr-text);
+  /* Sailrite Alert Red #e75053 — errors / blocking only */
+  background: #fdecec;
+  border: 1px solid var(--sr-danger);
+  color: var(--sr-danger);
   font-size: 0.85rem;
   font-weight: 600;
 }
-.action-hint .linkish { flex-shrink: 0; }
+.action-hint .linkish {
+  flex-shrink: 0;
+  color: var(--sr-danger);
+  font-weight: 700;
+}
+.action-hint .linkish:hover {
+  color: #c43d40;
+}
 
 .row.shape-toggle {
   display: flex;
