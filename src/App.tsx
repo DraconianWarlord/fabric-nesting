@@ -36,7 +36,7 @@ import {
 } from './lib/geometry'
 import { wrapSvgText } from './lib/wrapSvgText'
 import { exportNestingPdf } from './lib/exportPdf'
-import { panelAddBlockMessage } from './lib/panelAddGate'
+import { panelAddBlockMessage, rotate90BlockMessage } from './lib/panelAddGate'
 import { CalculatorNav, MobileMoreCalculators } from './CalculatorNav'
 import { SHOP } from './shopLinks'
 import './App.css'
@@ -398,7 +398,8 @@ export default function App() {
         spotFor(w, h, existing),
       )
       if (!next) {
-        setActionHint("Won't fit at 90° on this bolt — split or resize")
+        const msg = rotate90BlockMessage(false)
+        if (msg) setActionHint(msg)
         return prev
       }
       setActionHint(null)

@@ -30,3 +30,15 @@ export function panelAddBlockMessage(
   }
   return null
 }
+
+/** User-facing block when 90° rotation would hang off the bolt. */
+export const WONT_FIT_AT_90 =
+  "Won't fit at 90° on this bolt — split or resize"
+
+/**
+ * Message when tryRotate90 fails, or null when rotation is allowed.
+ * `rotatedOk` should be whether tryRotate90 returned a panel.
+ */
+export function rotate90BlockMessage(rotatedOk: boolean): string | null {
+  return rotatedOk ? null : WONT_FIT_AT_90
+}

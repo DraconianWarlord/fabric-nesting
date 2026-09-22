@@ -6,13 +6,16 @@ import {
   panelFootprint,
   suggestSplit,
   trapCutFromFinished,
+  tryRotate90,
   usedLengthInches,
   type Panel,
 } from './geometry'
 import {
   PANEL_TOO_LARGE_RESIZE,
   PANEL_TOO_LARGE_SPLIT,
+  WONT_FIT_AT_90,
   panelAddBlockMessage,
+  rotate90BlockMessage,
 } from './panelAddGate'
 
 const BOLT = 54
@@ -174,5 +177,41 @@ describe('extreme panel sizes — tiny + huge rect/trap', () => {
       const panel = trapPanel('huge-trap', cut)
       expect(orientationsThatFit(panel, BOLT)).toEqual([])
     })
+  })
+})
+
+describe('tall panel rotate 90°', () => {
+  it('blocks 90° when length exceeds bolt width, with the wont-fit message', () => {
+    // 20″ across × 80″ down — fits at 0°, but 90° needs 80″ across > 54″ bolt
+    const panel = rectPanel('tall', 20, 80)
+    // only 0° fits: rotated footprint would be 80″ across > 54″ bolt
+    expect(orientationsThatFit(panel, BOLT)).toEqual([0])
+    expect(panelFootprint({ ...panel, rotation: 90 }).w).toBeGreaterThan(BOLT)
+
+    const rotated = tryRotate90(panel, [], BOLT)
+    expect(rotated).toBeNull()
+    expect(rotate90BlockMessage(rotated != null)).toBe(WONT_FIT_AT_90)
+    expect(WONT_FIT_AT_90).toBe("Won't fit at 90° on this bolt — split or resize")
+  })
+
+  it('allows 90° when the tall side still fits across the bolt', () => {
+    // 20×40 — at 90° footprint width is 40 ≤ 54
+    const panel = rectPanel('tall-ok', 20, 40)
+    expect(orientationsThatFit(panel, BOLT)).toEqual([0, 90])
+    const rotated = tryRotate90(panel, [], BOLT)
+    expect(rotated).not.toBeNull()
+    expect(rotated!.rotation).toBe(90)
+    expect(rotate90BlockMessage(rotated != null)).toBeNull()
+  })
+
+  it('same wont-fit message for a tall trapezoid that cannot rotate', () => {
+    const cut = trapCutFromFinished(18, 22, 70, SA) // height 71 cut, width ~23
+    const panel = trapPanel('tall-trap', cut)
+    expect(cut.length).toBeGreaterThan(BOLT)
+    expect(cut.width).toBeLessThanOrEqual(BOLT)
+    expect(orientationsThatFit(panel, BOLT)).toEqual([0])
+    const rotated = tryRotate90(panel, [], BOLT)
+    expect(rotated).toBeNull()
+    expect(rotate90BlockMessage(false)).toBe(WONT_FIT_AT_90)
   })
 })
