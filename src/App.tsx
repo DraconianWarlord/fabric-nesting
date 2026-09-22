@@ -201,12 +201,18 @@ function SoftNumberInput({
         rest.onBlur?.(e)
       }}
       onKeyDown={(e) => {
+        if (e.key === 'Enter') {
+          e.preventDefault()
+          ;(e.target as HTMLInputElement).blur()
+          return
+        }
         if (value === '' && (e.key === 'ArrowUp' || e.key === 'ArrowDown')) {
           e.preventDefault()
           onValueChange(e.key === 'ArrowUp' ? emptyIncrement : 0)
         }
         rest.onKeyDown?.(e)
       }}
+      enterKeyHint="done"
     />
   )
 }

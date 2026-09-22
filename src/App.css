@@ -17,6 +17,7 @@
 }
 * { box-sizing: border-box; }
 html, body, #root { height: 100%; margin: 0; }
+html { -webkit-text-size-adjust: 100%; text-size-adjust: 100%; }
 body { margin: 0; background: var(--sr-bg); }
 
 .app {
@@ -263,6 +264,8 @@ input {
   border: 1px solid var(--sr-border);
   border-radius: 6px;
   font: inherit;
+  /* iOS Safari zooms the page if focused inputs are under 16px */
+  font-size: 16px;
   background: #fff;
   color: var(--sr-text);
   width: 100%;
