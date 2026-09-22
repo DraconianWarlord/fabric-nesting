@@ -795,11 +795,22 @@ button.clear-all {
 
 .row.shape-toggle {
   display: flex;
+  flex-wrap: wrap;
   gap: 0.35rem;
   margin-bottom: 0.35rem;
+  width: 100%;
+  max-width: 100%;
+  box-sizing: border-box;
 }
 .row.shape-toggle button {
-  flex: 1;
+  flex: 1 1 calc(33.333% - 0.3rem);
+  min-width: 0;
+  padding: 0.4rem 0.3rem;
+  font-size: 0.78rem;
+  line-height: 1.2;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 

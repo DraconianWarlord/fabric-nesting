@@ -1089,20 +1089,23 @@ export default function App() {
                 type="button"
                 className={draftKind === 'rect' ? 'active' : ''}
                 onClick={() => setDraftKind('rect')}
+                title="Rectangle"
               >
-                Rectangle
+                Rect
               </button>
               <button
                 type="button"
                 className={draftKind === 'trap' ? 'active' : ''}
                 onClick={() => setDraftKind('trap')}
+                title="Trapezoid"
               >
-                Trapezoid
+                Trap
               </button>
               <button
                 type="button"
                 className={draftKind === 'circle' ? 'active' : ''}
                 onClick={() => setDraftKind('circle')}
+                title="Circle"
               >
                 Circle
               </button>
