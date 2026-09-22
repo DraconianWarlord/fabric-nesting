@@ -8,7 +8,9 @@ import {
   type Panel,
   type Unit,
   fromInches,
+  isTrap,
   panelFootprint,
+  panelPolygon,
   usedLengthInches,
 } from './geometry'
 import { wrapWords } from './wrapSvgText'
@@ -151,12 +153,40 @@ export function fmtDim(inches: number, unit: Unit): string {
 }
 
 export function finishedSize(panel: Panel, seamAllowanceIn: number): { w: number; h: number } {
+  if (isTrap(panel)) {
+    const top = panel.topWidth ?? panel.width
+    const bot = panel.bottomWidth ?? panel.width
+    if (seamAllowanceIn <= 0) {
+      return { w: Math.max(top, bot), h: panel.length }
+    }
+    return {
+      w: Math.max(0, Math.max(top, bot) - 2 * seamAllowanceIn),
+      h: Math.max(0, panel.length - 2 * seamAllowanceIn),
+    }
+  }
   if (seamAllowanceIn <= 0) {
     return { w: panel.width, h: panel.length }
   }
   return {
     w: Math.max(0, panel.width - 2 * seamAllowanceIn),
     h: Math.max(0, panel.length - 2 * seamAllowanceIn),
+  }
+}
+
+/** Finished trap dims for table display (top/bottom/height). */
+export function finishedTrapSize(
+  panel: Panel,
+  seamAllowanceIn: number,
+): { top: number; bottom: number; height: number } {
+  const top = panel.topWidth ?? panel.width
+  const bot = panel.bottomWidth ?? panel.width
+  if (seamAllowanceIn <= 0) {
+    return { top, bottom: bot, height: panel.length }
+  }
+  return {
+    top: Math.max(0, top - 2 * seamAllowanceIn),
+    bottom: Math.max(0, bot - 2 * seamAllowanceIn),
+    height: Math.max(0, panel.length - 2 * seamAllowanceIn),
   }
 }
 
@@ -169,6 +199,11 @@ export function formatPanelNestDim(
   unit: Unit,
   _seamAllowanceIn: number,
 ): string {
+  if (isTrap(panel)) {
+    const top = panel.topWidth ?? panel.width
+    const bot = panel.bottomWidth ?? panel.width
+    return `${fmtDim(top, unit)}/${fmtDim(bot, unit)} × ${fmtDim(panel.length, unit)} ${unit}`
+  }
   return `${fmtDim(panel.width, unit)}×${fmtDim(panel.length, unit)} ${unit}`
 }
 
@@ -328,7 +363,22 @@ export function drawNest(
     doc.setFillColor(fill)
     doc.setDrawColor(20, 20, 30)
     doc.setLineWidth(0.6)
-    doc.rect(x, y, w, h, 'FD')
+
+    if (isTrap(p)) {
+      const poly = panelPolygon(p)
+      const pts = poly.map((pt) => fabricToPdf(pt.x, pt.y, scale, sliceStart))
+      const anyIn = poly.some((pt) => pt.y >= sliceStart - 1e-6 && pt.y <= sliceEnd + 1e-6)
+      const spans = py1 < sliceStart && py2 > sliceEnd
+      if ((anyIn || spans) && pts.length >= 3) {
+        const deltas: number[][] = []
+        for (let i = 1; i < pts.length; i++) {
+          deltas.push([pts[i].x - pts[i - 1].x, pts[i].y - pts[i - 1].y])
+        }
+        doc.lines(deltas, pts[0].x, pts[0].y, [1, 1], 'FD', true)
+      }
+    } else {
+      doc.rect(x, y, w, h, 'FD')
+    }
 
     // Label when enough of the panel top — or enough visible area — is on this slice.
     // Text is laid out clipped to the visible rectangle only.
@@ -473,18 +523,22 @@ export function exportNestingPdf(input: ExportPdfInput): string {
 
   const u = unit
   const tableBody = panels.map((p) => {
-    const fin = finishedSize(p, seamAllowanceIn)
     const fp = panelFootprint(p)
-    const finishedStr =
-      seamAllowanceIn > 0
-        ? `${fmtDim(fin.w, u)} × ${fmtDim(fin.h, u)} ${u}`
-        : `${fmtDim(p.width, u)} × ${fmtDim(p.length, u)} ${u}`
-    return [
-      p.label,
-      finishedStr,
-      `${fmtDim(fp.w, u)} × ${fmtDim(fp.h, u)} ${u}`,
-      '1',
-    ]
+    let finishedStr: string
+    if (isTrap(p)) {
+      const t = finishedTrapSize(p, seamAllowanceIn)
+      finishedStr = `${fmtDim(t.top, u)}/${fmtDim(t.bottom, u)} × ${fmtDim(t.height, u)} ${u}`
+    } else {
+      const fin = finishedSize(p, seamAllowanceIn)
+      finishedStr =
+        seamAllowanceIn > 0
+          ? `${fmtDim(fin.w, u)} × ${fmtDim(fin.h, u)} ${u}`
+          : `${fmtDim(p.width, u)} × ${fmtDim(p.length, u)} ${u}`
+    }
+    const cutStr = isTrap(p)
+      ? `${fmtDim(p.topWidth ?? p.width, u)}/${fmtDim(p.bottomWidth ?? p.width, u)} × ${fmtDim(p.length, u)} ${u}`
+      : `${fmtDim(fp.w, u)} × ${fmtDim(fp.h, u)} ${u}`
+    return [p.label, finishedStr, cutStr, '1']
   })
 
   autoTable(doc, {
@@ -493,8 +547,8 @@ export function exportNestingPdf(input: ExportPdfInput): string {
     head: [
       [
         'Name',
-        seamAllowanceIn > 0 ? 'Finished W×L' : 'Size W×L',
-        'Cut footprint',
+        seamAllowanceIn > 0 ? 'Finished size' : 'Size',
+        'Cut size',
         'Qty',
       ],
     ],

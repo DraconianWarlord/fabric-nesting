@@ -649,3 +649,12 @@ button.clear-all {
   font-weight: 600;
 }
 .action-hint .linkish { flex-shrink: 0; }
+
+.row.shape-toggle {
+  display: flex;
+  gap: 0.35rem;
+  margin-bottom: 0.35rem;
+}
+.row.shape-toggle button {
+  flex: 1;
+}

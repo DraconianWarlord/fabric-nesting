@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import {
   PANEL_COLORS,
   type Panel,
+  type PanelKind,
   type SplitSuggestion,
   type Unit,
   applyNestLayoutById,
@@ -14,6 +15,7 @@ import {
   flipV,
   fromInches,
   isGenericLabel,
+  isTrap,
   nextSequentialLabel,
   offBolt,
   orderYards,
@@ -21,12 +23,14 @@ import {
   overlapsAny,
   panelBounds,
   panelFootprint,
+  panelPolygon,
   patternEnabled,
   patternHOffset,
   placeSpot,
   snapCenterToPattern,
   suggestSplit,
   toInches,
+  trapCutFromFinished,
   tryRotate90,
   usedLengthInches,
 } from './lib/geometry'
@@ -94,7 +98,11 @@ function clientToSvg(svg: SVGSVGElement, clientX: number, clientY: number) {
 function panelSetIdentity(panels: Panel[]): string {
   return [...panels]
     .sort((a, b) => a.id.localeCompare(b.id))
-    .map((p) => `${p.id}:${p.width}x${p.length}`)
+    .map((p) =>
+      isTrap(p)
+        ? `${p.id}:trap:${p.topWidth}x${p.bottomWidth}x${p.length}`
+        : `${p.id}:rect:${p.width}x${p.length}`,
+    )
     .join('|')
 }
 
@@ -233,6 +241,10 @@ export default function App() {
   const [draftQty, setDraftQty] = useState<number | ''>(1)
   const [draftLabel, setDraftLabel] = useState('Panel')
   const [draftColor, setDraftColor] = useState<string | null>(null)
+  const [draftKind, setDraftKind] = useState<PanelKind>('rect')
+  const [draftTop, setDraftTop] = useState<number | ''>(12)
+  const [draftBottom, setDraftBottom] = useState<number | ''>(18)
+  const [draftHeight, setDraftHeight] = useState<number | ''>(20)
   const [fabricWidthDraft, setFabricWidthDraft] = useState<number | ''>(54)
   const [seamDraft, setSeamDraft] = useState<number | ''>(0.5)
   const [wasteDraft, setWasteDraft] = useState<number | ''>(0)
@@ -368,6 +380,20 @@ export default function App() {
   }
 
   function draftCutSizes(): { cutW: number; cutL: number; finW: number; finL: number } | null {
+    if (draftKind === 'trap') {
+      if (draftTop === '' || draftBottom === '' || draftHeight === '') return null
+      const finTop = toInches(Number(draftTop), unit)
+      const finBot = toInches(Number(draftBottom), unit)
+      const finH = toInches(Number(draftHeight), unit)
+      if (!(finTop > 0) || !(finBot > 0) || !(finH > 0)) return null
+      const cut = trapCutFromFinished(finTop, finBot, finH, seamAllowanceIn)
+      return {
+        finW: Math.max(finTop, finBot),
+        finL: finH,
+        cutW: cut.width,
+        cutL: cut.length,
+      }
+    }
     if (draftW === '' || draftL === '') return null
     const finW = toInches(Number(draftW), unit)
     const finL = toInches(Number(draftL), unit)
@@ -380,7 +406,18 @@ export default function App() {
     }
   }
 
+  function draftTrapCut(): ReturnType<typeof trapCutFromFinished> | null {
+    if (draftKind !== 'trap') return null
+    if (draftTop === '' || draftBottom === '' || draftHeight === '') return null
+    const finTop = toInches(Number(draftTop), unit)
+    const finBot = toInches(Number(draftBottom), unit)
+    const finH = toInches(Number(draftHeight), unit)
+    if (!(finTop > 0) || !(finBot > 0) || !(finH > 0)) return null
+    return trapCutFromFinished(finTop, finBot, finH, seamAllowanceIn)
+  }
+
   const draftSplit = (() => {
+    if (draftKind === 'trap') return null // split helper is rect-oriented for now
     const sizes = draftCutSizes()
     if (!sizes) return null
     return suggestSplit(sizes.cutW, sizes.cutL, fabricWidthIn, seamAllowanceIn)
@@ -433,6 +470,7 @@ export default function App() {
         const base: Panel = {
           id: uid(),
           label,
+          kind: 'rect',
           width: w,
           length: l,
           x: 0,
@@ -455,10 +493,15 @@ export default function App() {
     const sizes = draftCutSizes()
     if (!sizes) return
     const { cutW: w, cutL: l } = sizes
-    if (suggestSplit(w, l, fabricWidthIn, seamAllowanceIn)) {
+    if (draftKind === 'rect' && suggestSplit(w, l, fabricWidthIn, seamAllowanceIn)) {
       setActionHint('Panel is too large for this bolt — split or resize before adding.')
       return
     }
+    if (w > fabricWidthIn + 1e-6 && l > fabricWidthIn + 1e-6) {
+      setActionHint('Panel is too large for this bolt — resize before adding.')
+      return
+    }
+    const trapCut = draftTrapCut()
     const qty =
       typeof draftQty === 'number' && draftQty > 0 ? Math.min(40, Math.floor(draftQty)) : 1
     const next = [...panels]
@@ -470,24 +513,103 @@ export default function App() {
         : qty > 1
           ? `${draftLabel} ${i + 1}`
           : draftLabel
-      const base: Panel = {
-        id: uid(),
-        label,
-        width: w,
-        length: l,
-        x: 0,
-        y: 0,
-        rotation: 0,
-        flippedH: false,
-        flippedV: false,
-        color,
-      }
+      const base: Panel =
+        draftKind === 'trap' && trapCut
+          ? {
+              id: uid(),
+              label,
+              kind: 'trap',
+              width: trapCut.width,
+              length: trapCut.length,
+              topWidth: trapCut.topWidth,
+              bottomWidth: trapCut.bottomWidth,
+              x: 0,
+              y: 0,
+              rotation: 0,
+              flippedH: false,
+              flippedV: false,
+              color,
+            }
+          : {
+              id: uid(),
+              label,
+              kind: 'rect',
+              width: w,
+              length: l,
+              x: 0,
+              y: 0,
+              rotation: 0,
+              flippedH: false,
+              flippedV: false,
+              color,
+            }
       next.push(placeOrientedPanel(base, next))
     }
     setPanels(next)
     setSelectedId(next[next.length - 1]?.id ?? null)
     setActionHint(null)
     setMobileView('bolt')
+  }
+
+  function updateSelectedFinishedDims(
+    id: string,
+    patch: { width?: number; length?: number; topWidth?: number; bottomWidth?: number; height?: number },
+  ) {
+    setPanels((prev) => {
+      const current = prev.find((p) => p.id === id)
+      if (!current) return prev
+      const others = prev.filter((p) => p.id !== id)
+      let next: Panel
+      if (isTrap(current)) {
+        const finTop =
+          patch.topWidth !== undefined
+            ? patch.topWidth
+            : Math.max(0, (current.topWidth ?? current.width) - 2 * seamAllowanceIn)
+        const finBot =
+          patch.bottomWidth !== undefined
+            ? patch.bottomWidth
+            : Math.max(0, (current.bottomWidth ?? current.width) - 2 * seamAllowanceIn)
+        const finH =
+          patch.height !== undefined
+            ? patch.height
+            : Math.max(0, current.length - 2 * seamAllowanceIn)
+        if (!(finTop > 0) || !(finBot > 0) || !(finH > 0)) return prev
+        const cut = trapCutFromFinished(finTop, finBot, finH, seamAllowanceIn)
+        next = {
+          ...current,
+          kind: 'trap',
+          topWidth: cut.topWidth,
+          bottomWidth: cut.bottomWidth,
+          width: cut.width,
+          length: cut.length,
+        }
+      } else {
+        const finW =
+          patch.width !== undefined
+            ? patch.width
+            : Math.max(0, current.width - 2 * seamAllowanceIn)
+        const finL =
+          patch.length !== undefined
+            ? patch.length
+            : Math.max(0, current.length - 2 * seamAllowanceIn)
+        if (!(finW > 0) || !(finL > 0)) return prev
+        next = {
+          ...current,
+          kind: 'rect',
+          width: cutSize(finW, seamAllowanceIn),
+          length: cutSize(finL, seamAllowanceIn),
+        }
+      }
+      next = clampPanelToBolt(next, fabricWidthIn)
+      if (!canPlace(next, others, fabricWidthIn)) {
+        const fp = panelFootprint(next)
+        if (fp.w > fabricWidthIn + 1e-6) return prev
+        const spot = spotFor(fp.w, fp.h, others)
+        next = clampPanelToBolt({ ...next, x: spot.x, y: spot.y }, fabricWidthIn)
+        if (!canPlace(next, others, fabricWidthIn)) return prev
+      }
+      return prev.map((p) => (p.id === id ? next : p))
+    })
   }
 
   function runAutoNest() {
@@ -885,29 +1007,94 @@ export default function App() {
               Label
               <input value={draftLabel} onChange={(e) => setDraftLabel(e.target.value)} />
             </label>
-            <label>
-              Width ({unit}){seamAllowanceIn > 0 ? ' — finished' : ''}
-              <SoftNumberInput
-                min={1}
-                step={1}
-                inputMode="decimal"
-                value={draftW}
-                onValueChange={setDraftW}
-              />
-            </label>
-            <label>
-              Length ({unit}){seamAllowanceIn > 0 ? ' — finished' : ''}
-              <SoftNumberInput
-                min={1}
-                step={1}
-                inputMode="decimal"
-                value={draftL}
-                onValueChange={setDraftL}
-              />
-            </label>
+            <div className="row shape-toggle" role="group" aria-label="Panel shape">
+              <button
+                type="button"
+                className={draftKind === 'rect' ? 'active' : ''}
+                onClick={() => setDraftKind('rect')}
+              >
+                Rectangle
+              </button>
+              <button
+                type="button"
+                className={draftKind === 'trap' ? 'active' : ''}
+                onClick={() => setDraftKind('trap')}
+              >
+                Trapezoid
+              </button>
+            </div>
+            {draftKind === 'rect' ? (
+              <>
+                <label>
+                  Width ({unit}){seamAllowanceIn > 0 ? ' — finished' : ''}
+                  <SoftNumberInput
+                    min={1}
+                    step={1}
+                    inputMode="decimal"
+                    value={draftW}
+                    onValueChange={setDraftW}
+                  />
+                </label>
+                <label>
+                  Length ({unit}){seamAllowanceIn > 0 ? ' — finished' : ''}
+                  <SoftNumberInput
+                    min={1}
+                    step={1}
+                    inputMode="decimal"
+                    value={draftL}
+                    onValueChange={setDraftL}
+                  />
+                </label>
+              </>
+            ) : (
+              <>
+                <label>
+                  Top width ({unit}){seamAllowanceIn > 0 ? ' — finished' : ''}
+                  <SoftNumberInput
+                    min={1}
+                    step={1}
+                    inputMode="decimal"
+                    value={draftTop}
+                    onValueChange={setDraftTop}
+                  />
+                </label>
+                <label>
+                  Bottom width ({unit}){seamAllowanceIn > 0 ? ' — finished' : ''}
+                  <SoftNumberInput
+                    min={1}
+                    step={1}
+                    inputMode="decimal"
+                    value={draftBottom}
+                    onValueChange={setDraftBottom}
+                  />
+                </label>
+                <label>
+                  Height ({unit}){seamAllowanceIn > 0 ? ' — finished' : ''}
+                  <SoftNumberInput
+                    min={1}
+                    step={1}
+                    inputMode="decimal"
+                    value={draftHeight}
+                    onValueChange={setDraftHeight}
+                  />
+                </label>
+                <p className="hint">
+                  Parallel top &amp; bottom across the bolt (at 0°). Equal widths act like a rectangle.
+                </p>
+              </>
+            )}
             {seamAllowanceIn > 0 && draftSizes && (
               <p className="hint">
-                Cut ≈ {display(draftSizes.cutW)} × {display(draftSizes.cutL)} {unit}
+                {draftKind === 'trap' && draftTrapCut() ? (
+                  <>
+                    Cut ≈ {display(draftTrapCut()!.topWidth)}/{display(draftTrapCut()!.bottomWidth)} ×{' '}
+                    {display(draftTrapCut()!.height)} {unit}
+                  </>
+                ) : (
+                  <>
+                    Cut ≈ {display(draftSizes.cutW)} × {display(draftSizes.cutL)} {unit}
+                  </>
+                )}
               </p>
             )}
             <label>
@@ -962,7 +1149,12 @@ export default function App() {
               type="button"
               className="primary"
               onClick={addPanels}
-              disabled={Boolean(draftSplit) || draftW === '' || draftL === ''}
+              disabled={
+                Boolean(draftSplit) ||
+                (draftKind === 'rect'
+                  ? draftW === '' || draftL === ''
+                  : draftTop === '' || draftBottom === '' || draftHeight === '')
+              }
             >
               Add to bolt
             </button>
@@ -1031,26 +1223,46 @@ export default function App() {
               const b = panelBounds(p)
               const prob = problems.find((x) => x.id === p.id)
               const bad = Boolean(prob?.overlap || prob?.off)
+              const stroke = p.id === selectedId ? '#24258e' : bad ? '#e75053' : '#333'
+              const strokeWidth = p.id === selectedId ? 3.5 : bad ? 2.75 : 1.75
+              const poly = isTrap(p) ? panelPolygon(p) : null
+              const points = poly
+                ? poly.map((pt) => `${pt.x * pxPerIn},${pt.y * pxPerIn}`).join(' ')
+                : ''
               return (
                 <g
                   key={p.id}
-                  transform={`translate(${p.x * pxPerIn}, ${p.y * pxPerIn})`}
                   onPointerDown={(e) => onPointerDown(e, p.id)}
                   style={{ cursor: 'grab' }}
                 >
-                  <rect
-                    width={fp.w * pxPerIn}
-                    height={fp.h * pxPerIn}
-                    fill={p.color}
-                    opacity={0.9}
-                    stroke={p.id === selectedId ? '#24258e' : bad ? '#e75053' : '#333'}
-                    strokeWidth={p.id === selectedId ? 3.5 : bad ? 2.75 : 1.75}
-                  />
-                  <PanelLabel
-                    label={p.label}
-                    widthPx={fp.w * pxPerIn}
-                    heightPx={fp.h * pxPerIn}
-                  />
+                  {poly ? (
+                    <polygon
+                      points={points}
+                      fill={p.color}
+                      opacity={0.9}
+                      stroke={stroke}
+                      strokeWidth={strokeWidth}
+                      strokeLinejoin="miter"
+                    />
+                  ) : (
+                    <rect
+                      x={p.x * pxPerIn}
+                      y={p.y * pxPerIn}
+                      width={fp.w * pxPerIn}
+                      height={fp.h * pxPerIn}
+                      fill={p.color}
+                      opacity={0.9}
+                      stroke={stroke}
+                      strokeWidth={strokeWidth}
+                    />
+                  )}
+                  <g transform={`translate(${p.x * pxPerIn}, ${p.y * pxPerIn})`}>
+                    <PanelLabel
+                      label={p.label}
+                      widthPx={fp.w * pxPerIn}
+                      heightPx={fp.h * pxPerIn}
+                    />
+                  </g>
                   <title>{`${p.label} @ ${b.x1.toFixed(1)},${b.y1.toFixed(1)}`}</title>
                 </g>
               )
@@ -1101,6 +1313,117 @@ export default function App() {
                     onChange={(c) => setPanelColor(selected.id, c)}
                   />
                 </div>
+                {isTrap(selected) ? (
+                  <>
+                    <p className="hint">Trapezoid (parallel top &amp; bottom)</p>
+                    <label>
+                      Top width ({unit}){seamAllowanceIn > 0 ? ' — finished' : ''}
+                      <SoftNumberInput
+                        min={0.01}
+                        step={1}
+                        inputMode="decimal"
+                        value={Number(
+                          fromInches(
+                            Math.max(0, (selected.topWidth ?? selected.width) - 2 * seamAllowanceIn),
+                            unit,
+                          ).toFixed(unit === 'in' ? 2 : 1),
+                        )}
+                        onValueChange={(v) => {
+                          if (v === '' || !(v > 0)) return
+                          updateSelectedFinishedDims(selected.id, {
+                            topWidth: toInches(v, unit),
+                          })
+                        }}
+                      />
+                    </label>
+                    <label>
+                      Bottom width ({unit}){seamAllowanceIn > 0 ? ' — finished' : ''}
+                      <SoftNumberInput
+                        min={0.01}
+                        step={1}
+                        inputMode="decimal"
+                        value={Number(
+                          fromInches(
+                            Math.max(
+                              0,
+                              (selected.bottomWidth ?? selected.width) - 2 * seamAllowanceIn,
+                            ),
+                            unit,
+                          ).toFixed(unit === 'in' ? 2 : 1),
+                        )}
+                        onValueChange={(v) => {
+                          if (v === '' || !(v > 0)) return
+                          updateSelectedFinishedDims(selected.id, {
+                            bottomWidth: toInches(v, unit),
+                          })
+                        }}
+                      />
+                    </label>
+                    <label>
+                      Height ({unit}){seamAllowanceIn > 0 ? ' — finished' : ''}
+                      <SoftNumberInput
+                        min={0.01}
+                        step={1}
+                        inputMode="decimal"
+                        value={Number(
+                          fromInches(
+                            Math.max(0, selected.length - 2 * seamAllowanceIn),
+                            unit,
+                          ).toFixed(unit === 'in' ? 2 : 1),
+                        )}
+                        onValueChange={(v) => {
+                          if (v === '' || !(v > 0)) return
+                          updateSelectedFinishedDims(selected.id, {
+                            height: toInches(v, unit),
+                          })
+                        }}
+                      />
+                    </label>
+                  </>
+                ) : (
+                  <>
+                    <label>
+                      Width ({unit}){seamAllowanceIn > 0 ? ' — finished' : ''}
+                      <SoftNumberInput
+                        min={0.01}
+                        step={1}
+                        inputMode="decimal"
+                        value={Number(
+                          fromInches(
+                            Math.max(0, selected.width - 2 * seamAllowanceIn),
+                            unit,
+                          ).toFixed(unit === 'in' ? 2 : 1),
+                        )}
+                        onValueChange={(v) => {
+                          if (v === '' || !(v > 0)) return
+                          updateSelectedFinishedDims(selected.id, {
+                            width: toInches(v, unit),
+                          })
+                        }}
+                      />
+                    </label>
+                    <label>
+                      Length ({unit}){seamAllowanceIn > 0 ? ' — finished' : ''}
+                      <SoftNumberInput
+                        min={0.01}
+                        step={1}
+                        inputMode="decimal"
+                        value={Number(
+                          fromInches(
+                            Math.max(0, selected.length - 2 * seamAllowanceIn),
+                            unit,
+                          ).toFixed(unit === 'in' ? 2 : 1),
+                        )}
+                        onValueChange={(v) => {
+                          if (v === '' || !(v > 0)) return
+                          updateSelectedFinishedDims(selected.id, {
+                            length: toInches(v, unit),
+                          })
+                        }}
+                      />
+                    </label>
+                  </>
+                )}
                 <div className="row wrap">
                   <button type="button" onClick={() => rotateSelected90(selected.id)}>
                     Rotate 90°
@@ -1200,9 +1523,13 @@ export default function App() {
                 <p className="hint">
                   Cut footprint {display(panelFootprint(selected).w)} ×{' '}
                   {display(panelFootprint(selected).h)} {unit}
-                  {seamAllowanceIn > 0
-                    ? ` · finished ≈ ${display(selected.width - 2 * seamAllowanceIn)} × ${display(selected.length - 2 * seamAllowanceIn)} ${unit}`
-                    : ''}
+                  {isTrap(selected)
+                    ? seamAllowanceIn > 0
+                      ? ` · finished ${display((selected.topWidth ?? selected.width) - 2 * seamAllowanceIn)}/${display((selected.bottomWidth ?? selected.width) - 2 * seamAllowanceIn)} × ${display(selected.length - 2 * seamAllowanceIn)} ${unit}`
+                      : ` · cut ${display(selected.topWidth ?? selected.width)}/${display(selected.bottomWidth ?? selected.width)} × ${display(selected.length)} ${unit}`
+                    : seamAllowanceIn > 0
+                      ? ` · finished ≈ ${display(selected.width - 2 * seamAllowanceIn)} × ${display(selected.length - 2 * seamAllowanceIn)} ${unit}`
+                      : ''}
                 </p>
               </>
             ) : (
@@ -1235,7 +1562,9 @@ export default function App() {
                       <div className="list-main">
                         <span className="list-name">{p.label}</span>
                         <span className="list-dims">
-                          {display(fp.w)}×{display(fp.h)} {unit}
+                          {isTrap(p)
+                            ? `${display(p.topWidth ?? p.width)}/${display(p.bottomWidth ?? p.width)} × ${display(p.length)} ${unit}`
+                            : `${display(fp.w)}×${display(fp.h)} ${unit}`}
                         </span>
                       </div>
                       <span className="list-flags">

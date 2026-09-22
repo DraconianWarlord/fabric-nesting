@@ -224,3 +224,24 @@ describe('layoutPanelPdfLabel', () => {
     expect(r.lines[r.lines.length - 1]).toMatch(/in$/)
   })
 })
+
+describe('formatPanelNestDim trapezoid', () => {
+  it('shows top/bottom × height cut dims', () => {
+    const trap = {
+      id: '1',
+      label: 'T',
+      kind: 'trap' as const,
+      width: 20,
+      length: 16,
+      topWidth: 12,
+      bottomWidth: 20,
+      x: 0,
+      y: 0,
+      rotation: 0 as const,
+      flippedH: false,
+      flippedV: false,
+      color: '#24285e',
+    }
+    expect(formatPanelNestDim(trap, 'in', 0.5)).toBe('12/20 × 16 in')
+  })
+})

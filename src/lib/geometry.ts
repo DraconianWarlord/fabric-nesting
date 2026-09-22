@@ -21,14 +21,33 @@ export function cutSize(finished: number, seamAllowance: number): number {
   return finished + 2 * seamAllowance
 }
 
+export type PanelKind = 'rect' | 'trap'
+
+export interface Point {
+  x: number
+  y: number
+}
+
 export interface Panel {
   id: string
   label: string
-  /** Unrotated cut width (across bolt when rotation=0) */
+  /**
+   * Shape discriminant. Undefined / omitted treated as `'rect'` for backward compat.
+   * - `'rect'`: axis-aligned rectangle from `width` × `length` (cut sizes).
+   * - `'trap'`: trapezoid with parallel top & bottom (across bolt at rotation=0).
+   *   Stores cut `topWidth` / `bottomWidth`; `length` is cut height; `width` is
+   *   unrotated AABB width = max(topWidth, bottomWidth).
+   */
+  kind?: PanelKind
+  /** Unrotated cut width (across bolt when rotation=0). For traps: max(top,bottom). */
   width: number
-  /** Unrotated cut length (down bolt when rotation=0) */
+  /** Unrotated cut length (down bolt when rotation=0). For traps: cut height. */
   length: number
-  /** Top-left X on bolt (inches) */
+  /** Trap only: cut top parallel-edge width (local y=0). */
+  topWidth?: number
+  /** Trap only: cut bottom parallel-edge width (local y=length). */
+  bottomWidth?: number
+  /** Top-left X on bolt (inches) — AABB of the oriented cut polygon */
   x: number
   /** Top-left Y on bolt (inches) — down the roll */
   y: number
@@ -39,12 +58,179 @@ export interface Panel {
   color: string
 }
 
+/** True when panel is a trapezoid (explicit kind). */
+export function isTrap(p: Panel): boolean {
+  return p.kind === 'trap'
+}
+
+/**
+ * Seam-allowance rule for trapezoids (MVP):
+ * Expand each finished dimension by 2×SA, same as rectangles:
+ *   cutTop = finishedTop + 2×SA
+ *   cutBottom = finishedBottom + 2×SA
+ *   cutHeight = finishedHeight + 2×SA
+ * Then build an isosceles trapezoid from those cut sizes (centered in its AABB).
+ * Prefer this over a full polygon outward-offset for simplicity and consistency.
+ */
+export function trapCutFromFinished(
+  finishedTop: number,
+  finishedBottom: number,
+  finishedHeight: number,
+  seamAllowance: number,
+): { topWidth: number; bottomWidth: number; height: number; width: number; length: number } {
+  const sa = Math.max(0, seamAllowance)
+  const topWidth = finishedTop + 2 * sa
+  const bottomWidth = finishedBottom + 2 * sa
+  const height = finishedHeight + 2 * sa
+  const width = Math.max(topWidth, bottomWidth)
+  return { topWidth, bottomWidth, height, width, length: height }
+}
+
+/**
+ * Local cut trapezoid vertices (unrotated, unflipped), AABB origin at (0,0).
+ * Order CCW: top-left, top-right, bottom-right, bottom-left.
+ * Isosceles: both parallel edges centered on the AABB width.
+ */
+export function localTrapPolygon(p: Panel): Point[] {
+  const top = p.topWidth ?? p.width
+  const bottom = p.bottomWidth ?? p.width
+  const h = p.length
+  const w = Math.max(top, bottom, p.width)
+  const topX = (w - top) / 2
+  const botX = (w - bottom) / 2
+  return [
+    { x: topX, y: 0 },
+    { x: topX + top, y: 0 },
+    { x: botX + bottom, y: h },
+    { x: botX, y: h },
+  ]
+}
+
+/** Local rectangle corners CCW from top-left. */
+export function localRectPolygon(p: Panel): Point[] {
+  return [
+    { x: 0, y: 0 },
+    { x: p.width, y: 0 },
+    { x: p.width, y: p.length },
+    { x: 0, y: p.length },
+  ]
+}
+
+function applyFlip(pts: Point[], w: number, h: number, flipH: boolean, flipV: boolean): Point[] {
+  return pts.map((pt) => ({
+    x: flipH ? w - pt.x : pt.x,
+    y: flipV ? h - pt.y : pt.y,
+  }))
+}
+
+/** Rotate points 90° CW around origin, then shift so AABB min is (0,0). */
+function rotateCwNormalize(pts: Point[], rotation: 0 | 90 | 180 | 270): Point[] {
+  if (rotation === 0) return pts.map((p) => ({ ...p }))
+  const rot = pts.map((p) => {
+    if (rotation === 90) return { x: p.y, y: -p.x }
+    if (rotation === 180) return { x: -p.x, y: -p.y }
+    return { x: -p.y, y: p.x } // 270
+  })
+  let minX = Infinity
+  let minY = Infinity
+  for (const p of rot) {
+    if (p.x < minX) minX = p.x
+    if (p.y < minY) minY = p.y
+  }
+  return rot.map((p) => ({ x: p.x - minX, y: p.y - minY }))
+}
+
+/**
+ * World-space cut outline (CCW). Applies flip → rotate → translate to (x,y)
+ * as the top-left of the oriented AABB (same anchor as rectangles).
+ */
+export function panelPolygon(p: Panel): Point[] {
+  const local = isTrap(p) ? localTrapPolygon(p) : localRectPolygon(p)
+  const w = isTrap(p) ? Math.max(p.topWidth ?? 0, p.bottomWidth ?? 0, p.width) : p.width
+  const h = p.length
+  const flipped = applyFlip(local, w, h, p.flippedH, p.flippedV)
+  const oriented = rotateCwNormalize(flipped, p.rotation)
+  return oriented.map((pt) => ({ x: pt.x + p.x, y: pt.y + p.y }))
+}
+
+export function polygonAabb(pts: Point[]): { x1: number; y1: number; x2: number; y2: number } {
+  let x1 = Infinity
+  let y1 = Infinity
+  let x2 = -Infinity
+  let y2 = -Infinity
+  for (const p of pts) {
+    if (p.x < x1) x1 = p.x
+    if (p.y < y1) y1 = p.y
+    if (p.x > x2) x2 = p.x
+    if (p.y > y2) y2 = p.y
+  }
+  return { x1, y1, x2, y2 }
+}
+
+
+/** Project polygon onto axis (nx,ny); return [min,max]. */
+function projectPoly(pts: Point[], nx: number, ny: number): [number, number] {
+  let min = Infinity
+  let max = -Infinity
+  for (const p of pts) {
+    const d = p.x * nx + p.y * ny
+    if (d < min) min = d
+    if (d > max) max = d
+  }
+  return [min, max]
+}
+
+/**
+ * Convex polygon overlap via Separating Axis Theorem.
+ * Touching edges (zero-area contact) count as non-overlapping (eps).
+ */
+export function polygonsOverlap(a: Point[], b: Point[], eps = 1e-6): boolean {
+  if (a.length < 3 || b.length < 3) return false
+  const polys = [a, b]
+  for (const poly of polys) {
+    for (let i = 0; i < poly.length; i++) {
+      const j = (i + 1) % poly.length
+      const ex = poly[j].x - poly[i].x
+      const ey = poly[j].y - poly[i].y
+      // outward/inward normal — either works for SAT
+      const nx = -ey
+      const ny = ex
+      const len = Math.hypot(nx, ny)
+      if (len < 1e-12) continue
+      const ux = nx / len
+      const uy = ny / len
+      const [amin, amax] = projectPoly(a, ux, uy)
+      const [bmin, bmax] = projectPoly(b, ux, uy)
+      if (amax <= bmin + eps || bmax <= amin + eps) return false
+    }
+  }
+  return true
+}
+
+/** Human-readable size string for lists / labels. */
+export function panelDimLabel(p: Panel): string {
+  if (isTrap(p)) {
+    const top = p.topWidth ?? p.width
+    const bot = p.bottomWidth ?? p.width
+    return `${top}/${bot} × ${p.length}`
+  }
+  return `${p.width}×${p.length}`
+}
+
 export function panelFootprint(p: Panel): { w: number; h: number } {
+  if (isTrap(p)) {
+    // Oriented AABB from the cut polygon (handles flip + rotation).
+    const b = polygonAabb(panelPolygon({ ...p, x: 0, y: 0 }))
+    return { w: b.x2 - b.x1, h: b.y2 - b.y1 }
+  }
   const quarter = p.rotation === 90 || p.rotation === 270
   return quarter ? { w: p.length, h: p.width } : { w: p.width, h: p.length }
 }
 
 export function panelBounds(p: Panel): { x1: number; y1: number; x2: number; y2: number } {
+  if (isTrap(p)) {
+    return polygonAabb(panelPolygon(p))
+  }
   const { w, h } = panelFootprint(p)
   return { x1: p.x, y1: p.y, x2: p.x + w, y2: p.y + h }
 }
@@ -73,11 +259,28 @@ export function aabbOverlap(
 }
 
 export function overlapsAny(panel: Panel, others: Panel[]): boolean {
-  const a = panelBounds(panel)
-  return others.some((o) => o.id !== panel.id && aabbOverlap(a, panelBounds(o)))
+  const aBounds = panelBounds(panel)
+  const aIsTrap = isTrap(panel)
+  const aPoly = aIsTrap || others.some(isTrap) ? panelPolygon(panel) : null
+  return others.some((o) => {
+    if (o.id === panel.id) return false
+    // Fast reject via AABB
+    if (!aabbOverlap(aBounds, panelBounds(o))) return false
+    // Two axis-aligned rects: AABB is exact
+    if (!aIsTrap && !isTrap(o)) return true
+    // Trap involved: convex polygon SAT
+    return polygonsOverlap(aPoly ?? panelPolygon(panel), panelPolygon(o))
+  })
 }
 
 export function offBolt(panel: Panel, fabricWidth: number, eps = 1e-6): boolean {
+  if (isTrap(panel)) {
+    const poly = panelPolygon(panel)
+    for (const pt of poly) {
+      if (pt.x < -eps || pt.x > fabricWidth + eps || pt.y < -eps) return true
+    }
+    return false
+  }
   const b = panelBounds(panel)
   return b.x1 < -eps || b.x2 > fabricWidth + eps || b.y1 < -eps
 }
@@ -126,6 +329,7 @@ function makeProbe(width: number, length: number, x: number, y: number): Panel {
   return {
     id: '__probe__',
     label: '',
+    kind: 'rect',
     width,
     length,
     x,

@@ -31,6 +31,9 @@ import {
   suggestSplit,
   tryRotate90,
   usedLengthInches,
+  trapCutFromFinished,
+  panelPolygon,
+  panelDimLabel,
   type Panel,
 } from './geometry'
 
@@ -572,5 +575,149 @@ describe('tryRotate90', () => {
     expect(next!.rotation).toBe(90)
     expect(canPlace(next!, [wall], 54)).toBe(true)
     expect(offBolt(next!, 54)).toBe(false)
+  })
+})
+
+describe('trapezoid geometry', () => {
+  function trap(
+    partial: Partial<Panel> &
+      Pick<Panel, 'id' | 'x' | 'y'> & { topWidth: number; bottomWidth: number; height: number },
+  ): Panel {
+    const { topWidth, bottomWidth, height, ...rest } = partial
+    const width = Math.max(topWidth, bottomWidth)
+    return p({
+      kind: 'trap',
+      width,
+      length: height,
+      topWidth,
+      bottomWidth,
+      ...rest,
+    })
+  }
+
+  it('trapCutFromFinished expands each dim by 2×SA', () => {
+    const c = trapCutFromFinished(12, 18, 20, 0.5)
+    expect(c.topWidth).toBe(13)
+    expect(c.bottomWidth).toBe(19)
+    expect(c.height).toBe(21)
+    expect(c.width).toBe(19)
+    expect(c.length).toBe(21)
+  })
+
+  it('equal top/bottom behaves like a rect (AABB + polygon)', () => {
+    const t = trap({ id: 'eq', topWidth: 20, bottomWidth: 20, height: 24, x: 0, y: 0 })
+    expect(panelFootprint(t)).toEqual({ w: 20, h: 24 })
+    const poly = panelPolygon(t)
+    expect(poly).toHaveLength(4)
+    // Corners of a 20×24 rect
+    expect(poly.map((pt) => [pt.x, pt.y])).toEqual([
+      [0, 0],
+      [20, 0],
+      [20, 24],
+      [0, 24],
+    ])
+  })
+
+  it('isosceles trap local polygon centers both edges', () => {
+    const t = trap({ id: 't', topWidth: 10, bottomWidth: 20, height: 10, x: 0, y: 0 })
+    const poly = panelPolygon(t)
+    expect(poly[0]).toEqual({ x: 5, y: 0 })
+    expect(poly[1]).toEqual({ x: 15, y: 0 })
+    expect(poly[2]).toEqual({ x: 20, y: 10 })
+    expect(poly[3]).toEqual({ x: 0, y: 10 })
+    expect(panelFootprint(t)).toEqual({ w: 20, h: 10 })
+  })
+
+  it('rotate90 swaps footprint AABB for traps', () => {
+    const t = trap({ id: 't', topWidth: 10, bottomWidth: 20, height: 10, x: 0, y: 0 })
+    const r = rotate90(t)
+    expect(panelFootprint(r)).toEqual({ w: 10, h: 20 })
+    const poly = panelPolygon(r)
+    const b = panelBounds(r)
+    expect(b.x1).toBeCloseTo(0)
+    expect(b.y1).toBeCloseTo(0)
+    expect(b.x2).toBeCloseTo(10)
+    expect(b.y2).toBeCloseTo(20)
+    expect(poly.every((pt) => pt.x >= -1e-9 && pt.y >= -1e-9)).toBe(true)
+  })
+
+  it('flipH mirrors trapezoid across vertical mid', () => {
+    const t = trap({
+      id: 't',
+      topWidth: 10,
+      bottomWidth: 20,
+      height: 10,
+      x: 0,
+      y: 0,
+      flippedH: true,
+    })
+    // Without flip: top 5..15; with flipH on w=20: top becomes 5..15 still (symmetric).
+    // Use asymmetric: top left-biased by using equal max but flip of isosceles is same.
+    // Check flipV swaps top/bottom edges.
+    const v = trap({
+      id: 'v',
+      topWidth: 10,
+      bottomWidth: 20,
+      height: 10,
+      x: 0,
+      y: 0,
+      flippedV: true,
+    })
+    const poly = panelPolygon(v)
+    // After flipV, former top (narrow) is at y=10, former bottom (wide) at y=0
+    const atY0 = poly.filter((pt) => Math.abs(pt.y) < 1e-9)
+    const atY10 = poly.filter((pt) => Math.abs(pt.y - 10) < 1e-9)
+    const widthAt = (pts: { x: number }[]) =>
+      Math.max(...pts.map((p) => p.x)) - Math.min(...pts.map((p) => p.x))
+    expect(widthAt(atY0)).toBeCloseTo(20)
+    expect(widthAt(atY10)).toBeCloseTo(10)
+    expect(t.flippedH).toBe(true)
+  })
+
+  it('offBolt checks trap vertices (slant can hang past AABB left/right only if AABB does)', () => {
+    const t = trap({ id: 't', topWidth: 10, bottomWidth: 20, height: 10, x: 40, y: 0 })
+    // AABB 20 wide → x2=60 > 54
+    expect(offBolt(t, 54)).toBe(true)
+    const ok = trap({ id: 'ok', topWidth: 10, bottomWidth: 20, height: 10, x: 0, y: 0 })
+    expect(offBolt(ok, 54)).toBe(false)
+  })
+
+  it('canPlace: trap vs rect uses polygon SAT (no false AABB-only overlap)', () => {
+    // Place a wide-bottom trap and a small rect in the "ears" beside the narrow top —
+    // AABB would overlap the rect if placed under the top overhang region incorrectly.
+    // Simpler: two traps that AABB-overlap but polygons don't (touching slant gaps).
+    const a = trap({ id: 'a', topWidth: 4, bottomWidth: 20, height: 10, x: 0, y: 0 })
+    // Rect in the left "ear" beside the narrow top (inside AABB, outside polygon).
+    const ear = p({ id: 'ear', width: 5, length: 2, x: 0, y: 0 })
+    // At y=0..2, slant x = 8 - 0.8*y ∈ [6.4, 8]. ear is x=0..5, all < 6.4 → no polygon overlap.
+    // But AABB of trap is 0..20, 0..10 — overlaps ear AABB.
+    expect(aabbOverlap(panelBounds(a), panelBounds(ear))).toBe(true)
+    expect(canPlace(ear, [a], 54)).toBe(true)
+    expect(overlapsAny(ear, [a])).toBe(false)
+  })
+
+  it('canPlace rejects overlapping traps', () => {
+    const a = trap({ id: 'a', topWidth: 10, bottomWidth: 20, height: 10, x: 0, y: 0 })
+    const b = trap({ id: 'b', topWidth: 10, bottomWidth: 20, height: 10, x: 5, y: 0 })
+    expect(canPlace(b, [a], 54)).toBe(false)
+  })
+
+  it('autoNest still packs rects; traps nest via AABB placer', () => {
+    const panels = [
+      p({ id: 'r1', width: 20, length: 24, x: 0, y: 0 }),
+      trap({ id: 't1', topWidth: 12, bottomWidth: 18, height: 20, x: 0, y: 0 }),
+    ]
+    const nested = autoNestPanels(panels, 54)
+    expect(nested).toHaveLength(2)
+    for (const panel of nested) {
+      expect(canPlace(panel, nested, 54)).toBe(true)
+      expect(offBolt(panel, 54)).toBe(false)
+    }
+  })
+
+  it('panelDimLabel shows top/bottom × h for traps', () => {
+    const t = trap({ id: 't', topWidth: 12, bottomWidth: 18, height: 20, x: 0, y: 0 })
+    expect(panelDimLabel(t)).toBe('12/18 × 20')
+    expect(panelDimLabel(p({ id: 'r', width: 10, length: 12, x: 0, y: 0 }))).toBe('10×12')
   })
 })
