@@ -806,7 +806,7 @@ export default function App() {
             <button
               type="button"
               className="export-pdf"
-              title="Download nest as PDF"
+              title="Open nest PDF in a new tab"
               onClick={() => {
                 const ok = exportNestingPdfClick({
                   panels,

@@ -672,6 +672,13 @@ export function exportNestingPdf(input: ExportPdfInput): string {
   })
 
   const name = pdfFilename()
-  doc.save(name)
+  // Open in a new tab (keeps the user in-flow). Fall back to download if the
+  // browser blocks the popup.
+  const url = doc.output('bloburl')
+  const opened =
+    typeof window !== 'undefined' ? window.open(url, '_blank', 'noopener,noreferrer') : null
+  if (!opened) {
+    doc.save(name)
+  }
   return name
 }

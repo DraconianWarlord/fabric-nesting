@@ -27,6 +27,9 @@ function rect(partial: Partial<Panel> & Pick<Panel, 'id'>): Panel {
 describe('exportNestingPdf smoke (must exercise full builder)', () => {
   beforeEach(() => {
     vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(() => {})
+    vi.spyOn(window, 'open').mockImplementation(() => {
+      return { closed: false } as Window
+    })
     if (!URL.createObjectURL) {
       Object.defineProperty(URL, 'createObjectURL', { value: () => 'blob:test', configurable: true })
     }
