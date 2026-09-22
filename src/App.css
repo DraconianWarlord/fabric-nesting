@@ -852,7 +852,7 @@ button.clear-all {
 .circle-dims-svg {
   display: block;
   width: 100%;
-  min-height: 160px;
+  min-height: 180px;
   height: auto;
 }
 
@@ -867,7 +867,7 @@ button.clear-all {
 .irregular-dims-svg {
   display: block;
   width: 100%;
-  min-height: 200px;
+  min-height: 230px;
   height: auto;
 }
 

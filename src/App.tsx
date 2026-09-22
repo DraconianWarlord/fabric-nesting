@@ -1268,11 +1268,12 @@ export default function App() {
               <figure className="circle-dims-figure" aria-label="Circle finished diameter">
                 <svg
                   className="circle-dims-svg"
-                  viewBox="0 0 240 200"
+                  viewBox="0 0 240 220"
                   role="img"
                   aria-hidden="true"
                 >
                   <title>Finished diameter</title>
+                  {/* shape */}
                   <circle
                     cx="120"
                     cy="95"
@@ -1281,12 +1282,13 @@ export default function App() {
                     stroke="#111"
                     strokeWidth="2.5"
                   />
-                  <line x1="60" y1="95" x2="180" y2="95" stroke="#24285e" strokeWidth="2" />
-                  <line x1="60" y1="89" x2="60" y2="101" stroke="#24285e" strokeWidth="2" />
-                  <line x1="180" y1="89" x2="180" y2="101" stroke="#24285e" strokeWidth="2" />
+                  {/* diameter — outside below, same tick style as trapezoid dims */}
+                  <line x1="60" y1="178" x2="180" y2="178" stroke="#24285e" strokeWidth="2" />
+                  <line x1="60" y1="172" x2="60" y2="184" stroke="#24285e" strokeWidth="2" />
+                  <line x1="180" y1="172" x2="180" y2="184" stroke="#24285e" strokeWidth="2" />
                   <text
                     x="120"
-                    y="175"
+                    y="206"
                     textAnchor="middle"
                     fill="#24285e"
                     fontSize="16"
@@ -1367,94 +1369,106 @@ export default function App() {
               <figure className="irregular-dims-figure" aria-label="Irregular quadrilateral finished dimensions">
                 <svg
                   className="irregular-dims-svg"
-                  viewBox="0 0 320 240"
+                  viewBox="0 0 340 260"
                   role="img"
                   aria-hidden="true"
                 >
                   <title>Left, Bottom, Right, Top, and Diagonal</title>
-                  <defs>
-                    {/* Label paths sit just outside each edge so text follows the line */}
-                    <path id="irreg-label-bottom" d="M 60 192 L 250 192" />
-                    <path id="irreg-label-top" d="M 32 62 L 288 35" />
-                    <path id="irreg-label-left" d="M 58 175 L 36 78" />
-                    <path id="irreg-label-right" d="M 268 172 L 300 52" />
-                    <path id="irreg-label-diag" d="M 72 162 L 268 68" />
-                  </defs>
+                  {/* shape — BL, BR, TR, TL */}
                   <polygon
-                    points="60,170 250,170 280,55 40,80"
+                    points="70,175 250,175 285,60 45,85"
                     fill="#f5f5f5"
                     stroke="#111"
                     strokeWidth="2.5"
                   />
-                  {/* dashed diagonal bottom-left → top-right */}
+                  {/* dashed diagonal on the panel (bottom-left → top-right) */}
                   <line
-                    x1="60"
-                    y1="170"
-                    x2="280"
-                    y2="55"
+                    x1="70"
+                    y1="175"
+                    x2="285"
+                    y2="60"
                     stroke="#24285e"
-                    strokeWidth="1.75"
+                    strokeWidth="1.5"
                     strokeDasharray="6 4"
                   />
+                  {/* Bottom — outside, trap-style ticks */}
+                  <line x1="70" y1="200" x2="250" y2="200" stroke="#24285e" strokeWidth="2" />
+                  <line x1="70" y1="194" x2="70" y2="206" stroke="#24285e" strokeWidth="2" />
+                  <line x1="250" y1="194" x2="250" y2="206" stroke="#24285e" strokeWidth="2" />
                   <text
+                    x="160"
+                    y="226"
+                    textAnchor="middle"
+                    fill="#24285e"
+                    fontSize="15"
+                    fontWeight="700"
+                    fontFamily="system-ui,sans-serif"
+                  >
+                    Bottom
+                  </text>
+                  {/* Top — offset above slanted edge */}
+                  <line x1="38" y1="64" x2="288" y2="38" stroke="#24285e" strokeWidth="2" />
+                  <line x1="34" y1="58" x2="42" y2="70" stroke="#24285e" strokeWidth="2" />
+                  <line x1="284" y1="32" x2="292" y2="44" stroke="#24285e" strokeWidth="2" />
+                  <text
+                    x="163"
+                    y="28"
+                    textAnchor="middle"
+                    fill="#24285e"
+                    fontSize="15"
+                    fontWeight="700"
+                    fontFamily="system-ui,sans-serif"
+                    transform="rotate(-6 163 28)"
+                  >
+                    Top
+                  </text>
+                  {/* Left — outside slanted edge */}
+                  <line x1="28" y1="88" x2="50" y2="178" stroke="#24285e" strokeWidth="2" />
+                  <line x1="22" y1="90" x2="34" y2="86" stroke="#24285e" strokeWidth="2" />
+                  <line x1="44" y1="180" x2="56" y2="176" stroke="#24285e" strokeWidth="2" />
+                  <text
+                    x="16"
+                    y="138"
+                    textAnchor="middle"
+                    fill="#24285e"
+                    fontSize="15"
+                    fontWeight="700"
+                    fontFamily="system-ui,sans-serif"
+                    transform="rotate(-76 16 138)"
+                  >
+                    Left
+                  </text>
+                  {/* Right — outside slanted edge */}
+                  <line x1="302" y1="62" x2="268" y2="178" stroke="#24285e" strokeWidth="2" />
+                  <line x1="296" y1="58" x2="308" y2="66" stroke="#24285e" strokeWidth="2" />
+                  <line x1="262" y1="174" x2="274" y2="182" stroke="#24285e" strokeWidth="2" />
+                  <text
+                    x="308"
+                    y="125"
+                    textAnchor="middle"
+                    fill="#24285e"
+                    fontSize="15"
+                    fontWeight="700"
+                    fontFamily="system-ui,sans-serif"
+                    transform="rotate(72 308 125)"
+                  >
+                    Right
+                  </text>
+                  {/* Diagonal — parallel dim outside the dashed panel diagonal */}
+                  <line x1="95" y1="148" x2="265" y2="58" stroke="#24285e" strokeWidth="2" />
+                  <line x1="90" y1="142" x2="100" y2="154" stroke="#24285e" strokeWidth="2" />
+                  <line x1="260" y1="52" x2="270" y2="64" stroke="#24285e" strokeWidth="2" />
+                  <text
+                    x="190"
+                    y="92"
+                    textAnchor="middle"
                     fill="#24285e"
                     fontSize="14"
                     fontWeight="700"
                     fontFamily="system-ui,sans-serif"
-                    textAnchor="middle"
-                    dominantBaseline="central"
+                    transform="rotate(-28 190 92)"
                   >
-                    <textPath href="#irreg-label-bottom" startOffset="50%">
-                      Bottom
-                    </textPath>
-                  </text>
-                  <text
-                    fill="#24285e"
-                    fontSize="14"
-                    fontWeight="700"
-                    fontFamily="system-ui,sans-serif"
-                    textAnchor="middle"
-                    dominantBaseline="central"
-                  >
-                    <textPath href="#irreg-label-top" startOffset="50%">
-                      Top
-                    </textPath>
-                  </text>
-                  <text
-                    fill="#24285e"
-                    fontSize="14"
-                    fontWeight="700"
-                    fontFamily="system-ui,sans-serif"
-                    textAnchor="middle"
-                    dominantBaseline="central"
-                  >
-                    <textPath href="#irreg-label-left" startOffset="50%">
-                      Left
-                    </textPath>
-                  </text>
-                  <text
-                    fill="#24285e"
-                    fontSize="14"
-                    fontWeight="700"
-                    fontFamily="system-ui,sans-serif"
-                    textAnchor="middle"
-                    dominantBaseline="central"
-                  >
-                    <textPath href="#irreg-label-right" startOffset="50%">
-                      Right
-                    </textPath>
-                  </text>
-                  <text
-                    fill="#24285e"
-                    fontSize="13"
-                    fontWeight="600"
-                    fontFamily="system-ui,sans-serif"
-                    textAnchor="middle"
-                    dominantBaseline="central"
-                  >
-                    <textPath href="#irreg-label-diag" startOffset="50%">
-                      Diagonal
-                    </textPath>
+                    Diagonal
                   </text>
                 </svg>
               </figure>
