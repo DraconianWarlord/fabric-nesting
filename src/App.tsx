@@ -35,6 +35,7 @@ import {
   usedLengthInches,
 } from './lib/geometry'
 import { wrapSvgText } from './lib/wrapSvgText'
+import { CalculatorNav, MobileMoreCalculators } from './CalculatorNav'
 import './App.css'
 
 /** Minimum px per fabric inch so a tiny pane still draws. No max — bolt fills the middle pane. */
@@ -785,37 +786,10 @@ export default function App() {
             <span className="current-tool" aria-current="page">
               Nesting
             </span>
+            <MobileMoreCalculators />
           </div>
 
-          <nav className="calc-switch" aria-label="Calculators">
-            <button type="button" className="calc-switch-tab active" aria-current="page">
-              Nesting
-            </button>
-            <button
-              type="button"
-              className="calc-switch-tab calc-switch-tab--future"
-              disabled
-              title="Coming soon"
-            >
-              Yardage
-            </button>
-            <button
-              type="button"
-              className="calc-switch-tab calc-switch-tab--future"
-              disabled
-              title="Coming soon"
-            >
-              Bias
-            </button>
-            <button
-              type="button"
-              className="calc-switch-tab calc-switch-tab--future"
-              disabled
-              title="Coming soon"
-            >
-              Foam
-            </button>
-          </nav>
+          <CalculatorNav />
 
           <div className="app-header-status">
             <div className="yards" aria-label="Yardage summary">
