@@ -770,6 +770,40 @@ function makeProbe(
   }
 }
 
+/** Clone panel geometry at a candidate top-left (sides / trap widths / flips / rotation preserved). */
+export function makeProbeFromPanel(panel: Panel, x: number, y: number): Panel {
+  return {
+    ...panel,
+    id: '__probe__',
+    label: '',
+    x,
+    y,
+    color: '',
+  }
+}
+
+const CAND_DEDUP_EPS = 1e-3
+
+function dedupeSorted(vals: number[], eps = CAND_DEDUP_EPS): number[] {
+  const sorted = [...vals].filter((v) => Number.isFinite(v) && v >= -1e-9).sort((a, b) => a - b)
+  const out: number[] = []
+  for (const v of sorted) {
+    if (out.length === 0 || Math.abs(v - out[out.length - 1]) > eps) out.push(v)
+  }
+  return out
+}
+
+function dedupePoints(pts: { x: number; y: number }[], eps = CAND_DEDUP_EPS): { x: number; y: number }[] {
+  const out: { x: number; y: number }[] = []
+  for (const p of pts) {
+    if (!Number.isFinite(p.x) || !Number.isFinite(p.y)) continue
+    if (p.x < -1e-9 || p.y < -1e-9) continue
+    if (out.some((q) => Math.abs(q.x - p.x) <= eps && Math.abs(q.y - p.y) <= eps)) continue
+    out.push(p)
+  }
+  return out
+}
+
 /** Extra top-left candidates so circles can nest into valleys (AABB-edge BLF alone packs like squares). */
 function circleNestCandidates(
   diameter: number,
@@ -802,9 +836,163 @@ function circleNestCandidates(
     }
   }
   return {
-    xs: [...xs].filter((x) => x >= -1e-9).sort((a, b) => a - b),
-    ys: [...ys].filter((y) => y >= -1e-9).sort((a, b) => a - b),
+    xs: dedupeSorted([...xs]),
+    ys: dedupeSorted([...ys]),
   }
+}
+
+/** Standard AABB BLF edge candidates. */
+function aabbBlfCandidates(
+  fpW: number,
+  fabricWidth: number,
+  existing: Panel[],
+  gap: number,
+): { xs: number[]; ys: number[] } {
+  const xs = new Set<number>([0, Math.max(0, fabricWidth - fpW)])
+  const ys = new Set<number>([0])
+  for (const p of existing) {
+    const b = panelBounds(p)
+    xs.add(b.x1)
+    xs.add(b.x2 + gap)
+    ys.add(b.y1)
+    ys.add(b.y2 + gap)
+  }
+  return {
+    xs: dedupeSorted([...xs]),
+    ys: dedupeSorted([...ys]),
+  }
+}
+
+/**
+ * Denser nest candidates for trap/irregular: AABBs may overlap while polygons do not.
+ * Returns expanded x/y grids plus explicit (x,y) pairs (vertex-to-vertex / edge nest).
+ */
+function polyNestCandidates(
+  panel: Panel,
+  fabricWidth: number,
+  existing: Panel[],
+  gap: number,
+): { xs: number[]; ys: number[]; pairs: { x: number; y: number }[] } {
+  const fp = panelFootprint(panel)
+  const { xs: baseXs, ys: baseYs } = aabbBlfCandidates(fp.w, fabricWidth, existing, gap)
+  const xs = new Set<number>(baseXs)
+  const ys = new Set<number>(baseYs)
+  const pairs: { x: number; y: number }[] = []
+
+  // Partial-overlap steps (~fp/4 or 0.5–1") so AABBs can nest while polygons clear.
+  const stepX = Math.max(0.5, Math.min(1, fp.w / 4))
+  const stepY = Math.max(0.5, Math.min(1, fp.h / 4))
+
+  for (const p of existing) {
+    const b = panelBounds(p)
+    for (let x = b.x1 - fp.w + stepX; x < b.x2 + gap + 1e-9; x += stepX) {
+      if (x >= -1e-9 && x + fp.w <= fabricWidth + 1e-6) xs.add(x)
+    }
+    xs.add(b.x1 - fp.w + gap)
+    xs.add(b.x2 + gap - fp.w)
+    for (let y = b.y1 - fp.h + stepY; y < b.y2 + gap + 1e-9; y += stepY) {
+      if (y >= -1e-9) ys.add(y)
+    }
+    ys.add(b.y1 - fp.h + gap)
+    ys.add(b.y2 + gap - fp.h)
+  }
+
+  // Local oriented polygon at origin (same flips/rotation as panel).
+  const localPoly = panelPolygon({ ...panel, x: 0, y: 0 })
+
+  for (const other of existing) {
+    const otherPoly = isPolyPanel(other) || isCircle(other)
+      ? panelPolygon(other)
+      : (() => {
+          const b = panelBounds(other)
+          return [
+            { x: b.x1, y: b.y1 },
+            { x: b.x2, y: b.y1 },
+            { x: b.x2, y: b.y2 },
+            { x: b.x1, y: b.y2 },
+          ] as Point[]
+        })()
+
+    // Vertex-to-vertex translations.
+    for (const ev of otherPoly) {
+      for (const lv of localPoly) {
+        const x = ev.x - lv.x
+        const y = ev.y - lv.y
+        if (x >= -1e-9 && y >= -1e-9 && x + fp.w <= fabricWidth + 1e-6) {
+          pairs.push({ x, y })
+          xs.add(x)
+          ys.add(y)
+        }
+      }
+    }
+
+    // Edge-against-edge: nearly-parallel edges, offset by gap along normal, endpoints touch.
+    if (!isPolyPanel(other) && !isCircle(other)) continue
+    for (let i = 0; i < otherPoly.length; i++) {
+      const e0 = otherPoly[i]
+      const e1 = otherPoly[(i + 1) % otherPoly.length]
+      const edx = e1.x - e0.x
+      const edy = e1.y - e0.y
+      const elen = Math.hypot(edx, edy)
+      if (elen < 1e-9) continue
+      const eux = edx / elen
+      const euy = edy / elen
+      const normals: Point[] = [
+        { x: -euy, y: eux },
+        { x: euy, y: -eux },
+      ]
+      for (let j = 0; j < localPoly.length; j++) {
+        const n0 = localPoly[j]
+        const n1 = localPoly[(j + 1) % localPoly.length]
+        const ndx = n1.x - n0.x
+        const ndy = n1.y - n0.y
+        const nlen = Math.hypot(ndx, ndy)
+        if (nlen < 1e-9) continue
+        const nux = ndx / nlen
+        const nuy = ndy / nlen
+        const align = eux * nux + euy * nuy
+        if (Math.abs(Math.abs(align) - 1) > 0.02) continue
+
+        for (const nrm of normals) {
+          for (const [ea, na] of [
+            [e0, n0],
+            [e0, n1],
+            [e1, n0],
+            [e1, n1],
+          ] as const) {
+            const x = ea.x + nrm.x * gap - na.x
+            const y = ea.y + nrm.y * gap - na.y
+            if (x >= -1e-9 && y >= -1e-9 && x + fp.w <= fabricWidth + 1e-6) {
+              pairs.push({ x, y })
+              xs.add(x)
+              ys.add(y)
+            }
+          }
+        }
+      }
+    }
+  }
+
+  return {
+    xs: dedupeSorted([...xs].filter((x) => x + fp.w <= fabricWidth + 1e-6)),
+    ys: dedupeSorted([...ys]),
+    pairs: dedupePoints(pairs),
+  }
+}
+
+function scoreBetter(
+  yh: number,
+  y: number,
+  x: number,
+  bestYh: number,
+  bestY: number,
+  bestX: number,
+): boolean {
+  return (
+    yh < bestYh - 1e-9 ||
+    (Math.abs(yh - bestYh) <= 1e-9 &&
+      (y < bestY - 1e-9 || (Math.abs(y - bestY) <= 1e-9 && x < bestX - 1e-9)))
+  )
 }
 
 /** True when horizontal pattern repeat is active (vertical stripes / 2D). */
@@ -931,6 +1119,7 @@ export function snapCenterToPattern(
 /**
  * True bottom-left-fill: evaluate all candidate positions and pick the one
  * minimizing (y+h, y, x) among non-overlapping on-bolt fits.
+ * Prefer findBestSpotForPanel when the panel has full geometry (irregular/trap).
  */
 export function findBestSpot(
   width: number,
@@ -947,17 +1136,9 @@ export function findBestSpot(
     xCands = c.xs
     yCands = c.ys
   } else {
-    const xs = new Set<number>([0, Math.max(0, fabricWidth - width)])
-    const ys = new Set<number>([0])
-    for (const p of existing) {
-      const b = panelBounds(p)
-      xs.add(b.x1)
-      xs.add(b.x2 + gap)
-      ys.add(b.y1)
-      ys.add(b.y2 + gap)
-    }
-    xCands = [...xs].filter((x) => x >= -1e-9).sort((a, b) => a - b)
-    yCands = [...ys].filter((y) => y >= -1e-9).sort((a, b) => a - b)
+    const c = aabbBlfCandidates(width, fabricWidth, existing, gap)
+    xCands = c.xs
+    yCands = c.ys
   }
 
   let best: { x: number; y: number } | null = null
@@ -972,11 +1153,7 @@ export function findBestSpot(
       const probe = makeProbe(width, length, x, y, kind)
       if (overlapsAny(probe, existing)) continue
       const yh = y + length
-      const better =
-        yh < bestYh - 1e-9 ||
-        (Math.abs(yh - bestYh) <= 1e-9 &&
-          (y < bestY - 1e-9 || (Math.abs(y - bestY) <= 1e-9 && x < bestX - 1e-9)))
-      if (better) {
+      if (scoreBetter(yh, y, x, bestYh, bestY, bestX)) {
         best = { x, y }
         bestYh = yh
         bestY = y
@@ -991,10 +1168,62 @@ export function findBestSpot(
 }
 
 /**
+ * Panel-aware BLF: probe is a full clone of `panel` at (x,y) so irregular/trap
+ * polygon SAT works (sides, diagonal, trap widths, flips, rotation preserved).
+ * Poly panels also get denser nest candidates (partial AABB + vertex/edge).
+ */
+export function findBestSpotForPanel(
+  panel: Panel,
+  fabricWidth: number,
+  existing: Panel[],
+  gap = 0.25,
+): { x: number; y: number } {
+  const fp = panelFootprint(panel)
+  const h = fp.h
+  const w = fp.w
+
+  const candidatePoints: { x: number; y: number }[] = []
+
+  if (isCircle(panel)) {
+    const c = circleNestCandidates(w, fabricWidth, existing, gap)
+    for (const y of c.ys) for (const x of c.xs) candidatePoints.push({ x, y })
+  } else if (isPolyPanel(panel)) {
+    const c = polyNestCandidates(panel, fabricWidth, existing, gap)
+    for (const y of c.ys) for (const x of c.xs) candidatePoints.push({ x, y })
+    for (const p of c.pairs) candidatePoints.push(p)
+  } else {
+    const c = aabbBlfCandidates(w, fabricWidth, existing, gap)
+    for (const y of c.ys) for (const x of c.xs) candidatePoints.push({ x, y })
+  }
+
+  const unique = dedupePoints(candidatePoints)
+
+  let best: { x: number; y: number } | null = null
+  let bestYh = Infinity
+  let bestY = Infinity
+  let bestX = Infinity
+
+  for (const { x, y } of unique) {
+    if (x < -1e-9 || x + w > fabricWidth + 1e-6) continue
+    if (y < -1e-9) continue
+    const probe = makeProbeFromPanel(panel, x, y)
+    if (offBolt(probe, fabricWidth) || overlapsAny(probe, existing)) continue
+    const yh = y + h
+    if (scoreBetter(yh, y, x, bestYh, bestY, bestX)) {
+      best = { x, y }
+      bestYh = yh
+      bestY = y
+      bestX = x
+    }
+  }
+
+  if (best) return best
+  const y = existing.length ? usedLengthInches(existing) + gap : 0
+  return { x: 0, y }
+}
+
+/**
  * Prefer placements whose panel center sits on the pattern grid.
- * 2D: cell centers. Vertical stripes: snap X to H stripes, free Y candidates.
- * Horizontal stripes: snap Y to V stripes, free X candidates.
- * Among candidates, pick bottom-left-ish (min y+h, then y, then x).
  * Falls back to findBestSpot when no patterned spot fits.
  */
 export function findBestSpotOnPattern(
@@ -1029,13 +1258,8 @@ export function findBestSpotOnPattern(
     }
     xCands = xs
   } else {
-    const xs = new Set<number>([0, Math.max(0, fabricWidth - width)])
-    for (const p of existing) {
-      const b = panelBounds(p)
-      xs.add(b.x1)
-      xs.add(b.x2 + gap)
-    }
-    xCands = [...xs].filter((x) => x >= -1e-9).sort((a, b) => a - b)
+    const c = aabbBlfCandidates(width, fabricWidth, existing, gap)
+    xCands = c.xs
   }
 
   if (hasV) {
@@ -1049,13 +1273,8 @@ export function findBestSpotOnPattern(
     }
     yCands = ys
   } else {
-    const ys = new Set<number>([0])
-    for (const p of existing) {
-      const b = panelBounds(p)
-      ys.add(b.y1)
-      ys.add(b.y2 + gap)
-    }
-    yCands = [...ys].filter((y) => y >= -1e-9).sort((a, b) => a - b)
+    const c = aabbBlfCandidates(width, fabricWidth, existing, gap)
+    yCands = c.ys
   }
 
   let best: { x: number; y: number } | null = null
@@ -1070,11 +1289,7 @@ export function findBestSpotOnPattern(
       const probe = makeProbe(width, length, x, y, kind)
       if (overlapsAny(probe, existing)) continue
       const yh = y + length
-      const better =
-        yh < bestYh - 1e-9 ||
-        (Math.abs(yh - bestYh) <= 1e-9 &&
-          (y < bestY - 1e-9 || (Math.abs(y - bestY) <= 1e-9 && x < bestX - 1e-9)))
-      if (better) {
+      if (scoreBetter(yh, y, x, bestYh, bestY, bestX)) {
         best = { x, y }
         bestYh = yh
         bestY = y
@@ -1087,7 +1302,87 @@ export function findBestSpotOnPattern(
   return findBestSpot(width, length, fabricWidth, existing, gap, kind)
 }
 
-/** Route to pattern-aware or normal placement. */
+/** Pattern-aware placement using a full panel probe (geometry preserved). */
+export function findBestSpotOnPatternForPanel(
+  panel: Panel,
+  fabricWidth: number,
+  existing: Panel[],
+  hRepeat: number,
+  vRepeat: number,
+  gap = 0.25,
+): { x: number; y: number } {
+  if (!patternEnabled(hRepeat, vRepeat)) {
+    return findBestSpotForPanel(panel, fabricWidth, existing, gap)
+  }
+
+  const fp = panelFootprint(panel)
+  const hasH = hasHRepeat(hRepeat)
+  const hasV = hasVRepeat(vRepeat)
+  const used = usedLengthInches(existing)
+
+  let xCands: number[]
+  let yCands: number[]
+
+  if (hasH) {
+    const hOffset = patternHOffset(fabricWidth, hRepeat)
+    const iMax = Math.ceil(fabricWidth / hRepeat) + 1
+    const xs: number[] = []
+    for (let i = 0; i < iMax; i++) {
+      const cx = hOffset + (i + 0.5) * hRepeat
+      const x = cx - fp.w / 2
+      if (x >= -1e-9 && x + fp.w <= fabricWidth + 1e-6) xs.push(x)
+    }
+    xCands = xs
+  } else {
+    const c = isPolyPanel(panel)
+      ? polyNestCandidates(panel, fabricWidth, existing, gap)
+      : aabbBlfCandidates(fp.w, fabricWidth, existing, gap)
+    xCands = c.xs
+  }
+
+  if (hasV) {
+    const maxLen = Math.max(used + fp.h + gap + vRepeat * 3, fp.h + vRepeat * 4, vRepeat * 8)
+    const jMax = Math.ceil(maxLen / vRepeat) + 2
+    const ys: number[] = []
+    for (let j = 0; j < jMax; j++) {
+      const cy = (j + 0.5) * vRepeat
+      const y = cy - fp.h / 2
+      if (y >= -1e-9) ys.push(y)
+    }
+    yCands = ys
+  } else {
+    const c = isPolyPanel(panel)
+      ? polyNestCandidates(panel, fabricWidth, existing, gap)
+      : aabbBlfCandidates(fp.w, fabricWidth, existing, gap)
+    yCands = c.ys
+  }
+
+  let best: { x: number; y: number } | null = null
+  let bestYh = Infinity
+  let bestY = Infinity
+  let bestX = Infinity
+
+  for (const y of yCands) {
+    for (const x of xCands) {
+      if (x < -1e-9 || x + fp.w > fabricWidth + 1e-6) continue
+      if (y < -1e-9) continue
+      const probe = makeProbeFromPanel(panel, x, y)
+      if (offBolt(probe, fabricWidth) || overlapsAny(probe, existing)) continue
+      const yh = y + fp.h
+      if (scoreBetter(yh, y, x, bestYh, bestY, bestX)) {
+        best = { x, y }
+        bestYh = yh
+        bestY = y
+        bestX = x
+      }
+    }
+  }
+
+  if (best) return best
+  return findBestSpotForPanel(panel, fabricWidth, existing, gap)
+}
+
+/** Route to pattern-aware or normal placement (width/length/kind — AABB/circle). */
 export function placeSpot(
   width: number,
   length: number,
@@ -1102,6 +1397,21 @@ export function placeSpot(
     return findBestSpotOnPattern(width, length, fabricWidth, existing, hRepeat, vRepeat, gap, kind)
   }
   return findBestSpot(width, length, fabricWidth, existing, gap, kind)
+}
+
+/** Panel-aware placeSpot — prefer this for irregular/trap auto-nest. */
+export function placeSpotForPanel(
+  panel: Panel,
+  fabricWidth: number,
+  existing: Panel[],
+  gap = 0.25,
+  hRepeat = 0,
+  vRepeat = 0,
+): { x: number; y: number } {
+  if (patternEnabled(hRepeat, vRepeat)) {
+    return findBestSpotOnPatternForPanel(panel, fabricWidth, existing, hRepeat, vRepeat, gap)
+  }
+  return findBestSpotForPanel(panel, fabricWidth, existing, gap)
 }
 
 /** Thin wrapper — prefer findBestSpot for new call sites. */
@@ -1182,25 +1492,75 @@ const SORT_ORDERS: SortFn[] = [
   (ps) => stableSort(ps, (a, b) => a.width * a.length - b.width * b.length),
 ]
 
+type NestPose = {
+  rotation: 0 | 90 | 180 | 270
+  flippedH: boolean
+  flippedV: boolean
+}
+
 function placeAtOrientation(
   panel: Panel,
-  rotation: 0 | 90,
+  pose: NestPose,
   fabricWidth: number,
   placed: Panel[],
   gap: number,
   hRepeat = 0,
   vRepeat = 0,
 ): Panel {
-  const oriented: Panel = { ...panel, rotation, x: 0, y: 0 }
-  const fp = panelFootprint(oriented)
-  const kind: PanelKind = panel.kind ?? 'rect'
-  const spot = placeSpot(fp.w, fp.h, fabricWidth, placed, gap, hRepeat, vRepeat, kind)
-  return { ...panel, rotation, x: spot.x, y: spot.y }
+  const oriented: Panel = {
+    ...panel,
+    rotation: pose.rotation,
+    flippedH: pose.flippedH,
+    flippedV: pose.flippedV,
+    x: 0,
+    y: 0,
+  }
+  const spot = placeSpotForPanel(oriented, fabricWidth, placed, gap, hRepeat, vRepeat)
+  return { ...oriented, x: spot.x, y: spot.y }
 }
 
-function tryOrientations(panel: Panel, fabricWidth: number): Array<0 | 90> {
-  const orients = orientationsThatFit(panel, fabricWidth)
-  return orients.length > 0 ? orients : ([0] as Array<0 | 90>)
+/**
+ * Poses to try when nesting.
+ * Circles: [0] only. Rects: 0/90. Poly (trap/irregular): 0/90/180/270 × flip variants.
+ */
+function posesToTry(panel: Panel, fabricWidth: number): NestPose[] {
+  if (isCircle(panel)) {
+    return panel.width <= fabricWidth + 1e-6
+      ? [{ rotation: 0, flippedH: false, flippedV: false }]
+      : [{ rotation: 0, flippedH: false, flippedV: false }]
+  }
+
+  if (isPolyPanel(panel)) {
+    const rots: Array<0 | 90 | 180 | 270> = [0, 90, 180, 270]
+    const flips: Array<{ flippedH: boolean; flippedV: boolean }> = [
+      { flippedH: false, flippedV: false },
+      { flippedH: true, flippedV: false },
+      { flippedH: false, flippedV: true },
+      { flippedH: true, flippedV: true },
+    ]
+    const out: NestPose[] = []
+    for (const rotation of rots) {
+      for (const f of flips) {
+        const fp = panelFootprint({ ...panel, rotation, ...f })
+        if (fp.w <= fabricWidth + 1e-6) out.push({ rotation, ...f })
+      }
+    }
+    return out.length > 0
+      ? out
+      : [{ rotation: 0, flippedH: panel.flippedH, flippedV: panel.flippedV }]
+  }
+
+  // Rect: 0/90 only, preserve existing flips.
+  const out: NestPose[] = []
+  for (const rotation of [0, 90] as const) {
+    const fp = panelFootprint({ ...panel, rotation })
+    if (fp.w <= fabricWidth + 1e-6) {
+      out.push({ rotation, flippedH: panel.flippedH, flippedV: panel.flippedV })
+    }
+  }
+  return out.length > 0
+    ? out
+    : [{ rotation: 0, flippedH: panel.flippedH, flippedV: panel.flippedV }]
 }
 
 /** Orientation chooser: min used length after place, then lower y, then lower x. */
@@ -1217,8 +1577,8 @@ function chooseMinUsed(
   let bestY = Infinity
   let bestX = Infinity
 
-  for (const rotation of tryOrientations(panel, fabricWidth)) {
-    const candidate = placeAtOrientation(panel, rotation, fabricWidth, placed, gap, hRepeat, vRepeat)
+  for (const pose of posesToTry(panel, fabricWidth)) {
+    const candidate = placeAtOrientation(panel, pose, fabricWidth, placed, gap, hRepeat, vRepeat)
     const used = usedLengthInches([...placed, candidate])
     const better =
       used < bestUsed - 1e-9 ||
@@ -1244,17 +1604,22 @@ function chooseMaxAcross(
   hRepeat = 0,
   vRepeat = 0,
 ): Panel {
-  const tryRots = tryOrientations(panel, fabricWidth)
-  let chosen: 0 | 90 = tryRots[0]
+  const poses = posesToTry(panel, fabricWidth)
+  let chosen = poses[0]
   let bestAcross = -1
   let bestH = Infinity
-  for (const rotation of tryRots) {
-    const fp = panelFootprint({ ...panel, rotation })
+  for (const pose of poses) {
+    const fp = panelFootprint({
+      ...panel,
+      rotation: pose.rotation,
+      flippedH: pose.flippedH,
+      flippedV: pose.flippedV,
+    })
     const across = acrossCount(fp.w, fabricWidth, gap)
     if (across > bestAcross || (across === bestAcross && fp.h < bestH - 1e-9)) {
       bestAcross = across
       bestH = fp.h
-      chosen = rotation
+      chosen = pose
     }
   }
   return placeAtOrientation(panel, chosen, fabricWidth, placed, gap, hRepeat, vRepeat)
@@ -1269,17 +1634,22 @@ function chooseMinHeight(
   hRepeat = 0,
   vRepeat = 0,
 ): Panel {
-  const tryRots = tryOrientations(panel, fabricWidth)
-  let chosen: 0 | 90 = tryRots[0]
+  const poses = posesToTry(panel, fabricWidth)
+  let chosen = poses[0]
   let bestH = Infinity
   let bestAcross = -1
-  for (const rotation of tryRots) {
-    const fp = panelFootprint({ ...panel, rotation })
+  for (const pose of poses) {
+    const fp = panelFootprint({
+      ...panel,
+      rotation: pose.rotation,
+      flippedH: pose.flippedH,
+      flippedV: pose.flippedV,
+    })
     const across = acrossCount(fp.w, fabricWidth, gap)
     if (fp.h < bestH - 1e-9 || (Math.abs(fp.h - bestH) <= 1e-9 && across > bestAcross)) {
       bestH = fp.h
       bestAcross = across
-      chosen = rotation
+      chosen = pose
     }
   }
   return placeAtOrientation(panel, chosen, fabricWidth, placed, gap, hRepeat, vRepeat)
@@ -1320,7 +1690,9 @@ function layoutKey(panels: Panel[]): string {
     .map((p) => {
       const x = Math.round(p.x * 100) / 100
       const y = Math.round(p.y * 100) / 100
-      return `${p.id}:${x},${y},${p.rotation}`
+      const fh = p.flippedH ? 'H' : ''
+      const fv = p.flippedV ? 'V' : ''
+      return `${p.id}:${x},${y},${p.rotation}${fh}${fv}`
     })
     .join('|')
 }
@@ -1438,7 +1810,16 @@ export const PANEL_COLORS = [
 export function applyNestLayoutById(panels: Panel[], nested: Panel[]): Panel[] {
   return panels.map((p) => {
     const n = nested.find((x) => x.id === p.id)
-    return n ? { ...p, x: n.x, y: n.y, rotation: n.rotation } : p
+    return n
+      ? {
+          ...p,
+          x: n.x,
+          y: n.y,
+          rotation: n.rotation,
+          flippedH: n.flippedH,
+          flippedV: n.flippedV,
+        }
+      : p
   })
 }
 

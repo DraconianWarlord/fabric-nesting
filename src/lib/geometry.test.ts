@@ -43,6 +43,7 @@ import {
   irregularCutFromFinished,
   quadPolygonFromSides,
   isIrregular,
+  makeProbeFromPanel,
   type Panel,
 } from './geometry'
 
@@ -1116,3 +1117,160 @@ describe("circle nesting (true circle packing)", () => {
     expect(used).toBeLessThan(20 - 0.1)
   })
 })
+
+
+describe('poly panel nesting efficiency (irregular / trap)', () => {
+  function irreg(
+    partial: Partial<Panel> & {
+      id: string
+      sideLeft: number
+      sideFront: number
+      sideRight: number
+      sideBack: number
+      diagonal: number
+      x?: number
+      y?: number
+    },
+  ): Panel {
+    const poly = quadPolygonFromSides(
+      partial.sideLeft,
+      partial.sideFront,
+      partial.sideRight,
+      partial.sideBack,
+      partial.diagonal,
+    )!
+    let maxX = 0
+    let maxY = 0
+    for (const pt of poly) {
+      if (pt.x > maxX) maxX = pt.x
+      if (pt.y > maxY) maxY = pt.y
+    }
+    return {
+      id: partial.id,
+      label: partial.label ?? partial.id,
+      kind: 'irregular',
+      width: maxX,
+      length: maxY,
+      sideLeft: partial.sideLeft,
+      sideFront: partial.sideFront,
+      sideRight: partial.sideRight,
+      sideBack: partial.sideBack,
+      diagonal: partial.diagonal,
+      x: partial.x ?? 0,
+      y: partial.y ?? 0,
+      rotation: partial.rotation ?? 0,
+      flippedH: partial.flippedH ?? false,
+      flippedV: partial.flippedV ?? false,
+      color: '#000',
+    }
+  }
+
+  function trapPanel(
+    id: string,
+    topWidth: number,
+    bottomWidth: number,
+    height: number,
+  ): Panel {
+    return p({
+      id,
+      kind: 'trap',
+      width: Math.max(topWidth, bottomWidth),
+      length: height,
+      topWidth,
+      bottomWidth,
+      x: 0,
+      y: 0,
+    })
+  }
+
+  it('two right-triangle-like irregulars nest into ~rectangle height (not 2× AABB stack)', () => {
+    // Near-right-triangle quad: A(0,0), B(W,0), C(W,eps), D(0,H).
+    // Complementary flip packs both into one W×H rectangle when bolt is too narrow for 2 AABBs.
+    const W = 20
+    const H = 12
+    const eps = 0.25
+    const L = H
+    const F = W
+    const R = eps
+    const B = Math.hypot(W, H - eps)
+    const d = Math.hypot(W, eps)
+    const a = irreg({ id: 'a', sideLeft: L, sideFront: F, sideRight: R, sideBack: B, diagonal: d })
+    const b = irreg({ id: 'b', sideLeft: L, sideFront: F, sideRight: R, sideBack: B, diagonal: d })
+    const fp = panelFootprint(a)
+    expect(fp.w).toBeCloseTo(W, 5)
+    expect(fp.h).toBeCloseTo(H, 5)
+
+    // Bolt fits one AABB only — pure AABB BLF would stack to ~2H.
+    const fabricWidth = fp.w + 1
+    expect(fp.w * 2).toBeGreaterThan(fabricWidth)
+
+    const nested = autoNestPanels([a, b], fabricWidth, 0)
+    expect(nested).toHaveLength(2)
+    for (const panel of nested) {
+      expect(canPlace(panel, nested, fabricWidth)).toBe(true)
+      expect(offBolt(panel, fabricWidth)).toBe(false)
+    }
+    // AABBs may overlap while polygons do not (the efficiency win).
+    expect(aabbOverlap(panelBounds(nested[0]), panelBounds(nested[1]))).toBe(true)
+    expect(overlapsAny(nested[0], [nested[1]])).toBe(false)
+
+    const used = usedLengthInches(nested)
+    // Close to combined rectangle height H, not 2×H from AABB stacking.
+    expect(used).toBeLessThan(fp.h * 1.35)
+    expect(used).toBeCloseTo(fp.h, 0)
+  })
+
+  it('mirrored traps nest with AABB overlap (tighter than AABB-only BLF)', () => {
+    // Narrow-top / wide-bottom traps: flipV + horizontal offset nests them on one row
+    // with overlapping AABBs. Bolt < 2×AABB so AABB-only BLF must stack to ~2h.
+    const h = 10
+    const a = trapPanel('a', 2, 20, h)
+    const b = trapPanel('b', 2, 20, h)
+    const fabricWidth = 32 // fits offset nest (~x=12) but not two non-overlapping AABBs
+    expect(panelFootprint(a).w * 2).toBeGreaterThan(fabricWidth)
+
+    const nested = autoNestPanels([a, b], fabricWidth, 0)
+    for (const panel of nested) {
+      expect(canPlace(panel, nested, fabricWidth)).toBe(true)
+      expect(offBolt(panel, fabricWidth)).toBe(false)
+    }
+    const used = usedLengthInches(nested)
+    // AABB-only stack ≈ 20; polygon nest with flip shares a row (used ≈ h).
+    expect(used).toBeLessThan(h * 1.5)
+    expect(aabbOverlap(panelBounds(nested[0]), panelBounds(nested[1]))).toBe(true)
+    expect(overlapsAny(nested[0], [nested[1]])).toBe(false)
+  })
+
+  it('makeProbeFromPanel preserves irregular side geometry (not AABB fallback)', () => {
+    const d = defaultDiagonal(12, 16, 14, 18)
+    const panel = irreg({
+      id: 'p',
+      sideLeft: 12,
+      sideFront: 16,
+      sideRight: 14,
+      sideBack: 18,
+      diagonal: d,
+    })
+    const probe = makeProbeFromPanel(panel, 3, 4)
+    expect(probe.sideLeft).toBe(12)
+    expect(probe.sideFront).toBe(16)
+    expect(probe.diagonal).toBe(d)
+    expect(probe.x).toBe(3)
+    expect(probe.y).toBe(4)
+    // Polygon at probe position should not be a plain AABB rectangle
+    const poly = panelPolygon(probe)
+    expect(poly.length).toBe(4)
+    const xs = poly.map((pt) => pt.x)
+    // Irregular (non-rect) has a vertex not at AABB corners only — at least one x strictly inside
+    const minX = Math.min(...xs)
+    const maxX = Math.max(...xs)
+    expect(xs.some((x) => x > minX + 1e-6 && x < maxX - 1e-6) || ysInterior(poly)).toBe(true)
+  })
+})
+
+function ysInterior(poly: { x: number; y: number }[]): boolean {
+  const ys = poly.map((pt) => pt.y)
+  const minY = Math.min(...ys)
+  const maxY = Math.max(...ys)
+  return ys.some((y) => y > minY + 1e-6 && y < maxY - 1e-6)
+}
