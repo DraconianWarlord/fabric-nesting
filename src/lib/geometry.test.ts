@@ -453,7 +453,7 @@ describe('autoNestCandidates', () => {
     ]
     const cands = autoNestCandidates(panels, 54)
     expect(cands.length).toBeGreaterThanOrEqual(1)
-    expect(cands.length).toBeLessThanOrEqual(12)
+    expect(cands.length).toBeLessThanOrEqual(6)
     const shortest = usedLengthInches(cands[0])
     expect(shortest).toBeLessThan(70)
     // Cycling indices yield distinct layouts when multiple exist
