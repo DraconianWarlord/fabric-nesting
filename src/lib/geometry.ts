@@ -1684,7 +1684,7 @@ function packOrdered(
   return placed
 }
 
-const CANDIDATE_CAP = 12
+const CANDIDATE_CAP = 6
 
 /** Round layout signature so near-identical packs collapse. */
 function layoutKey(panels: Panel[]): string {
@@ -1702,7 +1702,7 @@ function layoutKey(panels: Panel[]): string {
 
 /**
  * Generate unique ranked nest layouts (used length ascending).
- * Dedupes near-identical packs; caps at ~12 for UX cycling.
+ * Dedupes near-identical packs; caps at 6 most-efficient for UX cycling.
  * When at least one of hRepeat/vRepeat is > 0, placements snap to pattern (2D or 1D stripes).
  */
 export function autoNestCandidates(
