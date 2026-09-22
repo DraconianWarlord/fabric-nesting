@@ -35,6 +35,7 @@ import {
   usedLengthInches,
 } from './lib/geometry'
 import { wrapSvgText } from './lib/wrapSvgText'
+import { exportNestingPdf } from './lib/exportPdf'
 import { CalculatorNav, MobileMoreCalculators } from './CalculatorNav'
 import { SHOP } from './shopLinks'
 import './App.css'
@@ -244,10 +245,14 @@ function exportNestingPdfClick(opts: {
   patterned: boolean
   hRepeatIn: number
   vRepeatIn: number
-}) {
-  void import('./lib/exportPdf').then(({ exportNestingPdf }) => {
-    exportNestingPdf(opts)
-  })
+}): string | null {
+  try {
+    // Static import keeps download inside the user-gesture (critical on mobile Safari).
+    return exportNestingPdf(opts)
+  } catch (err) {
+    console.error('Export PDF failed', err)
+    return null
+  }
 }
 
 export default function App() {
@@ -802,8 +807,8 @@ export default function App() {
               type="button"
               className="export-pdf"
               title="Download nest as PDF"
-              onClick={() =>
-                exportNestingPdfClick({
+              onClick={() => {
+                const ok = exportNestingPdfClick({
                   panels,
                   fabricWidthIn,
                   seamAllowanceIn,
@@ -815,7 +820,10 @@ export default function App() {
                   hRepeatIn,
                   vRepeatIn,
                 })
-              }
+                if (ok == null) {
+                  setActionHint('Export PDF failed — try again, or remove a panel and retry.')
+                }
+              }}
             >
               Export PDF
             </button>
