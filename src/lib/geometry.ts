@@ -944,7 +944,7 @@ export function isGenericLabel(label: string): boolean {
 
 /** Panel fill palette — Sailrite-ish navy/indigo/teal/coral/amber/olive. */
 export const PANEL_COLORS = [
-  '#1a237e', // navy
+  '#24285e', // SR Blue
   '#2a33ab', // indigo
   '#00796b', // teal
   '#e75053', // coral

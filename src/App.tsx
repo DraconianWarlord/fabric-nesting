@@ -163,7 +163,7 @@ function ColorPicker({
         <input
           id={`${idPrefix}-custom`}
           type="color"
-          value={/^#[0-9a-fA-F]{6}$/.test(value) ? value : '#1a237e'}
+          value={/^#[0-9a-fA-F]{6}$/.test(value) ? value : '#24285e'}
           onChange={(e) => onChange(e.target.value)}
         />
       </label>
@@ -1374,7 +1374,7 @@ export default function App() {
               const b = panelBounds(p)
               const prob = problems.find((x) => x.id === p.id)
               const bad = Boolean(prob?.overlap || prob?.off)
-              const stroke = p.id === selectedId ? '#24258e' : bad ? '#e75053' : '#333'
+              const stroke = p.id === selectedId ? '#24285e' : bad ? '#e75053' : '#333'
               const strokeWidth = p.id === selectedId ? 3.5 : bad ? 2.75 : 1.75
               const poly = isTrap(p) ? panelPolygon(p) : null
               const points = poly
