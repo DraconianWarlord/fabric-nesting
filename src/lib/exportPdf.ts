@@ -575,29 +575,39 @@ export function drawNest(
     }
 
     // Label when enough of the panel top — or enough visible area — is on this slice.
-    // Text is laid out clipped to the visible rectangle only.
+    // Centered in the visible box; circles use the inscribed square so text stays in-disc.
     const topOnSlice = py1 >= sliceStart - 1e-6 && py1 < sliceEnd
     const enoughArea = h >= 14
     const showLabel = h >= 8 && (topOnSlice || enoughArea)
     if (showLabel) {
       const pad = 2
-      const boxW = Math.max(0, w - pad * 2)
-      const boxH = Math.max(0, h - pad * 2)
+      const fullW = w
+      const fullH = h
+      const useInscribed = isCircle(p)
+      const boxOuterW = useInscribed ? fullW / Math.SQRT2 : fullW
+      const boxOuterH = useInscribed ? fullH / Math.SQRT2 : fullH
+      const boxX = x + (fullW - boxOuterW) / 2
+      const boxY = y + (fullH - boxOuterH) / 2
+      const boxW = Math.max(0, boxOuterW - pad * 2)
+      const boxH = Math.max(0, boxOuterH - pad * 2)
       const dimStr = formatPanelNestDim(p, unit, slice?.seamAllowanceIn ?? 0)
       const layout = layoutPanelPdfLabel(p.label, dimStr, boxW, boxH, 9, 5)
       if (layout.lines.length > 0 && boxW > 2 && boxH > 2) {
         doc.setTextColor(contrastLabelColor(fill))
         doc.setFontSize(layout.fontSize)
         doc.setFont('helvetica', 'normal')
-        // Baseline of first line; keep all baselines inside the visible box
-        const maxBaseline =
-          y + h - pad - 0.15 * layout.fontSize
-        let ty = y + pad + layout.fontSize * 0.85
+        const blockH = layout.lines.length * layout.lineHeight
+        let ty =
+          boxY + boxOuterH / 2 - blockH / 2 + layout.fontSize * 0.85
+        const cx = boxX + boxOuterW / 2
+        const minY = boxY + pad * 0.5
+        const maxY = boxY + boxOuterH - pad - 0.15 * layout.fontSize
         for (let i = 0; i < layout.lines.length; i++) {
           const lineY = ty + i * layout.lineHeight
-          if (lineY > maxBaseline + 0.5) break
-          if (lineY < y + pad * 0.5) continue
-          doc.text(layout.lines[i], x + pad, lineY, {
+          if (lineY > maxY + 0.5) break
+          if (lineY < minY) continue
+          doc.text(layout.lines[i], cx, lineY, {
+            align: 'center',
             maxWidth: Math.max(2, boxW),
           })
         }

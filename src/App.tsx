@@ -70,17 +70,21 @@ function PanelLabel({
   const boxH = Math.max(0, heightPx - pad * 2)
   const { lines, fontSize, lineHeight } = wrapSvgText(label, boxW, boxH, 12, 7)
   if (lines.length === 0) return null
-  const startY = pad + fontSize * 0.85
+  const blockH = lines.length * lineHeight
+  // Vertically center the text block; tspans use dy from the first baseline.
+  const startY = heightPx / 2 - blockH / 2 + fontSize * 0.8
+  const midX = widthPx / 2
   return (
     <text
-      x={pad}
+      x={midX}
       y={startY}
+      textAnchor="middle"
       className="panel-label"
       style={{ fontSize }}
       pointerEvents="none"
     >
       {lines.map((line, i) => (
-        <tspan key={i} x={pad} dy={i === 0 ? 0 : lineHeight}>
+        <tspan key={i} x={midX} dy={i === 0 ? 0 : lineHeight}>
           {line}
         </tspan>
       ))}
@@ -1847,13 +1851,21 @@ export default function App() {
                       strokeWidth={strokeWidth}
                     />
                   )}
-                  <g transform={`translate(${p.x * pxPerIn}, ${p.y * pxPerIn})`}>
-                    <PanelLabel
-                      label={p.label}
-                      widthPx={fp.w * pxPerIn}
-                      heightPx={fp.h * pxPerIn}
-                    />
-                  </g>
+                  {(() => {
+                    // Circles: wrap inside the inscribed square so text stays in the disc.
+                    // Others: AABB (poly visual center ≈ AABB for nest labels).
+                    const fullW = fp.w * pxPerIn
+                    const fullH = fp.h * pxPerIn
+                    const labelW = circ ? fullW / Math.SQRT2 : fullW
+                    const labelH = circ ? fullH / Math.SQRT2 : fullH
+                    const ox = p.x * pxPerIn + (fullW - labelW) / 2
+                    const oy = p.y * pxPerIn + (fullH - labelH) / 2
+                    return (
+                      <g transform={`translate(${ox}, ${oy})`}>
+                        <PanelLabel label={p.label} widthPx={labelW} heightPx={labelH} />
+                      </g>
+                    )
+                  })()}
                   <title>{`${p.label} @ ${b.x1.toFixed(1)},${b.y1.toFixed(1)}`}</title>
                 </g>
               )
