@@ -5,7 +5,7 @@ export type Calculator = {
   id: string
   label: string
   status: CalculatorStatus
-  /** Shown as a desktop tab pill when space allows; otherwise only in More. */
+  /** Reserved for future primary-pill layouts; unused by current nav. */
   primary?: boolean
 }
 
@@ -30,6 +30,5 @@ export const CALCULATORS: Calculator[] = [
 
 export const ACTIVE_CALCULATOR = CALCULATORS.find((c) => c.status === 'active')!
 
-export const PRIMARY_SOON = CALCULATORS.filter((c) => c.primary && c.status === 'soon')
-
-export const MORE_ONLY = CALCULATORS.filter((c) => !c.primary && c.status === 'soon')
+/** Every calculator except the one currently open (shown in More dropdowns). */
+export const OTHER_CALCULATORS = CALCULATORS.filter((c) => c.status !== 'active')
