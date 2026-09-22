@@ -42,8 +42,8 @@ body { margin: 0; background: var(--sr-bg); }
   align-items: center;
   justify-content: space-between;
   gap: 0.75rem 1.25rem;
-  padding: 0.45rem 0.9rem;
-  min-height: 52px;
+  padding: 0.5rem 0.9rem;
+  min-height: 56px;
   flex-wrap: nowrap;
 }
 .app-header-identity {
@@ -55,7 +55,7 @@ body { margin: 0; background: var(--sr-bg); }
   white-space: nowrap;
 }
 .brand-logo {
-  height: 28px;
+  height: 40px;
   width: auto;
   display: block;
   object-fit: contain;
@@ -110,10 +110,11 @@ body { margin: 0; background: var(--sr-bg); }
 }
 .calc-switch-tab:disabled,
 .calc-switch-tab--future {
-  opacity: 0.38;
+  opacity: 1;
   cursor: not-allowed;
-  background: transparent;
-  color: rgba(255, 255, 255, 0.45);
+  background: rgba(255, 255, 255, 0.08);
+  color: rgba(255, 255, 255, 0.88);
+  border-color: rgba(255, 255, 255, 0.22);
 }
 .calc-more {
   position: relative;
@@ -230,7 +231,9 @@ body { margin: 0; background: var(--sr-bg); }
 button.export-pdf {
   flex-shrink: 0;
   background: var(--sr-action);
-  border: 1px solid var(--sr-action);
+  /* White/grey board so the blue CTA reads on the black header */
+  border: 1px solid rgba(255, 255, 255, 0.92);
+  box-shadow: 0 0 0 1px rgba(160, 160, 160, 0.55);
   color: #fff;
   border-radius: 6px;
   padding: 0.35rem 0.75rem;
@@ -241,7 +244,8 @@ button.export-pdf {
 }
 button.export-pdf:hover {
   background: var(--sr-action-hover);
-  border-color: var(--sr-action-hover);
+  border-color: #fff;
+  box-shadow: 0 0 0 1px rgba(190, 190, 190, 0.7);
 }
 
 .disclaimer {
@@ -659,7 +663,7 @@ button.clear-all {
     padding: 0.5rem 0.75rem;
     min-height: 52px;
   }
-  .brand-logo { height: 24px; }
+  .brand-logo { height: 32px; }
   .brand-sub { display: none; }
   /* Hide desktop calc tabs; Nesting chip + compact More calculators */
   .calc-switch { display: none; }
@@ -811,6 +815,21 @@ button.clear-all {
   display: block;
   width: 100%;
   min-height: 220px;
+  height: auto;
+}
+
+/* Circle diameter diagram under shape toggle */
+.circle-dims-figure {
+  margin: 0.5rem 0 0.65rem;
+  padding: 0.5rem;
+  background: #fff;
+  border: 1px solid var(--sr-border, #ddd);
+  border-radius: 8px;
+}
+.circle-dims-svg {
+  display: block;
+  width: 100%;
+  min-height: 160px;
   height: auto;
 }
 

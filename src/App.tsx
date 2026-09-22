@@ -782,7 +782,6 @@ export default function App() {
         <div className="app-header-bar">
           <div className="app-header-identity">
             <img src="/sailrite-logo.png" alt="Sailrite" className="brand-logo" />
-            <span className="brand-sub">Calculators</span>
             <span className="current-tool" aria-current="page">
               Nesting
             </span>
