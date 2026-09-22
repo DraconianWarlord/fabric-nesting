@@ -658,3 +658,19 @@ button.clear-all {
 .row.shape-toggle button {
   flex: 1;
 }
+
+
+/* Trapezoid dimension diagram under shape toggle */
+.trap-dims-figure {
+  margin: 0.35rem 0 0.5rem;
+  padding: 0;
+}
+.trap-dims-img {
+  display: block;
+  width: 100%;
+  max-width: 100%;
+  height: auto;
+  border: 1px solid var(--sr-border, #ddd);
+  border-radius: 6px;
+  background: #fff;
+}

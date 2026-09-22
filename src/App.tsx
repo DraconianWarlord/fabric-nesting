@@ -1023,6 +1023,15 @@ export default function App() {
                 Trapezoid
               </button>
             </div>
+            {draftKind === 'trap' && (
+              <figure className="trap-dims-figure">
+                <img
+                  src="/trap-dims.png"
+                  alt="Trapezoid finished dimensions: top width, bottom width, and height between the parallel edges"
+                  className="trap-dims-img"
+                />
+              </figure>
+            )}
             {draftKind === 'rect' ? (
               <>
                 <label>
