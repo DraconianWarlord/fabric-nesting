@@ -436,6 +436,7 @@ button.clear-all {
 }
 
 .bolt {
+  display: block;
   background: #fff;
   border: 2px solid #333;
   border-radius: 4px;
@@ -529,7 +530,7 @@ button.clear-all {
   }
 
   .canvas-wrap {
-    min-height: 50vh;
+    min-height: 0;
     height: 100%;
     padding: 0.65rem;
   }

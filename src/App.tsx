@@ -37,15 +37,13 @@ import {
 import { wrapSvgText } from './lib/wrapSvgText'
 import './App.css'
 
-/** Floor / cap for responsive bolt scale (px per fabric inch). */
-const PX_PER_IN_MIN = 8
-const PX_PER_IN_MAX = 12
+/** Minimum px per fabric inch so a tiny pane still draws. No max — bolt fills the middle pane. */
+const PX_PER_IN_MIN = 1
 const MAX_FABRIC_WIDTH_IN = 80
 
-/** Scale so bolt width fills most of the canvas-wrap; floor ~8, cap ~12. */
+/** Scale so bolt width fills the canvas-wrap (available width ÷ fabric width). */
 function computeCanvasPxPerIn(availableWidthPx: number, fabricWidthIn: number): number {
-  const target = availableWidthPx / Math.max(fabricWidthIn, 1e-6)
-  return Math.max(PX_PER_IN_MIN, Math.min(target, PX_PER_IN_MAX))
+  return Math.max(PX_PER_IN_MIN, availableWidthPx / Math.max(fabricWidthIn, 1e-6))
 }
 
 function PanelLabel({
@@ -307,9 +305,10 @@ export default function App() {
     const el = canvasWrapRef.current
     if (!el) return
     const update = () => {
-      // Account for .canvas-wrap padding (1rem each side ≈ 32px)
-      const pad = 32
-      const available = Math.max(80, el.clientWidth - pad)
+      const cs = getComputedStyle(el)
+      const pad =
+        parseFloat(cs.paddingLeft || '0') + parseFloat(cs.paddingRight || '0')
+      const available = Math.max(40, el.clientWidth - pad)
       setPxPerIn(computeCanvasPxPerIn(available, fabricWidthIn))
     }
     update()
