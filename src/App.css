@@ -161,6 +161,39 @@ button.export-pdf:hover {
   grid-template-columns: 280px 1fr 300px;
   flex: 1;
   min-height: 0;
+  min-width: 0;
+}
+.layout > * {
+  min-width: 0;
+}
+
+/* Narrow-screen Controls | Bolt | Panels switcher (shown in media query) */
+.mobile-tabs {
+  display: none;
+  flex-shrink: 0;
+  gap: 0.35rem;
+  padding: 0.4rem 0.65rem;
+  background: #fff;
+  border-bottom: 1px solid var(--sr-border);
+}
+.mobile-tabs button {
+  flex: 1;
+  min-height: 44px;
+  padding: 0.55rem 0.5rem;
+  font-size: 0.85rem;
+  font-weight: 650;
+  border-radius: 8px;
+  border: 1px solid var(--sr-border);
+  background: #fff;
+  color: var(--sr-text);
+}
+.mobile-tabs button.active {
+  background: var(--sr-action);
+  border-color: var(--sr-action);
+  color: #fff;
+}
+.mobile-tabs button:hover:not(.active) {
+  background: #ececec;
 }
 
 .sidebar {
@@ -232,6 +265,9 @@ input {
   font: inherit;
   background: #fff;
   color: var(--sr-text);
+  width: 100%;
+  max-width: 100%;
+  min-height: 2.25rem;
 }
 input:focus {
   outline: 2px solid rgba(36, 40, 94, 0.35);
@@ -389,6 +425,8 @@ button.clear-all {
 .canvas-wrap {
   overflow: auto;
   min-height: 0;
+  min-width: 0;
+  -webkit-overflow-scrolling: touch;
   padding: 1rem;
   background:
     linear-gradient(90deg, rgba(0, 0, 0, 0.03) 1px, transparent 1px),
@@ -436,21 +474,152 @@ button.clear-all {
   stroke-width: 2.5px;
 }
 
+/* Tablet / mid: still 3-col until ~800px, but allow header wrap + no overflow */
 @media (max-width: 960px) {
+  .top {
+    flex-wrap: wrap;
+    align-items: flex-start;
+  }
+  .top-brand { flex: 1 1 auto; }
+  .top-actions {
+    flex-wrap: wrap;
+    justify-content: space-between;
+    flex-shrink: 1;
+    width: 100%;
+  }
+  .yards { justify-content: flex-start; text-align: left; }
+  .disclaimer { white-space: normal; }
+  .calc-tab {
+    min-height: 36px;
+    padding: 0.4rem 0.7rem;
+  }
+  button.export-pdf {
+    min-height: 44px;
+    padding: 0.5rem 0.85rem;
+  }
+}
+
+/* Phone + small tablet: single pane via Controls | Bolt | Panels */
+@media (max-width: 800px) {
+  .mobile-tabs {
+    display: flex;
+  }
+
   .layout {
     grid-template-columns: 1fr;
-    grid-template-rows: auto 1fr auto;
+    grid-template-rows: 1fr;
   }
+
+  /* Show only the active mobile pane */
+  .layout.mobile-controls .canvas-wrap,
+  .layout.mobile-controls .sidebar.right,
+  .layout.mobile-bolt .sidebar.left,
+  .layout.mobile-bolt .sidebar.right,
+  .layout.mobile-panels .sidebar.left,
+  .layout.mobile-panels .canvas-wrap {
+    display: none;
+  }
+
   .sidebar.left,
   .sidebar.right {
     border: none;
-    border-bottom: 1px solid var(--sr-border);
-    max-height: 40vh;
+    max-height: none;
+    height: 100%;
+    padding: 0.85rem;
   }
-  .top { flex-direction: column; align-items: stretch; }
-  .top-actions { justify-content: space-between; flex-wrap: wrap; }
-  .yards { justify-content: flex-start; text-align: left; }
-  .disclaimer { white-space: normal; }
+
+  .canvas-wrap {
+    min-height: 50vh;
+    height: 100%;
+    padding: 0.65rem;
+  }
+
+  .top {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 0.5rem;
+    padding: 0.5rem 0.75rem;
+  }
+  .top-brand {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 0.45rem;
+  }
+  .brand-logo { height: 24px; }
+  .calc-nav {
+    width: 100%;
+    gap: 0.35rem;
+  }
+  .calc-tab {
+    min-height: 44px;
+    padding: 0.5rem 0.75rem;
+    font-size: 0.8rem;
+  }
+  .calc-more { display: none; }
+  .top-actions {
+    width: 100%;
+    gap: 0.5rem;
+  }
+  .yards-exact { font-size: 1.1rem; }
+  button.export-pdf {
+    min-height: 44px;
+    flex: 0 0 auto;
+  }
+
+  .collapse-header {
+    min-height: 44px;
+    padding: 0.65rem 0.75rem;
+  }
+
+  .row {
+    flex-wrap: wrap;
+  }
+  .row > button {
+    min-height: 44px;
+    flex: 1 1 auto;
+  }
+
+  button.primary,
+  button.danger.clear-all {
+    min-height: 44px;
+  }
+
+  .list-item {
+    min-height: 44px;
+    padding: 0.5rem 0.45rem;
+  }
+
+  .color-swatch {
+    width: 36px;
+    height: 36px;
+  }
+
+  .action-hint {
+    margin: 0 0.5rem 0.4rem;
+    flex-wrap: wrap;
+  }
+
+  /* Avoid horizontal page scroll from long content */
+  .app {
+    overflow-x: hidden;
+  }
+  body {
+    overflow-x: hidden;
+  }
+}
+
+/* Very narrow phones (~390px) */
+@media (max-width: 420px) {
+  .sidebar.left,
+  .sidebar.right {
+    padding: 0.65rem;
+  }
+  .yards-meta {
+    width: 100%;
+  }
+  .brand-sub {
+    font-size: 0.72rem;
+  }
 }
 
 .warn-banner {

@@ -246,6 +246,8 @@ export default function App() {
   const [openAdd, setOpenAdd] = useState(true)
   const [openSelected, setOpenSelected] = useState(true)
   const [openList, setOpenList] = useState(true)
+  /** Narrow-screen segmented view: Controls | Bolt | Panels */
+  const [mobileView, setMobileView] = useState<'controls' | 'bolt' | 'panels'>('bolt')
   const dragRef = useRef<{
     id: string
     ox: number
@@ -485,6 +487,7 @@ export default function App() {
     setPanels(next)
     setSelectedId(next[next.length - 1]?.id ?? null)
     setActionHint(null)
+    setMobileView('bolt')
   }
 
   function runAutoNest() {
@@ -686,8 +689,35 @@ export default function App() {
         </div>
       )}
 
-      <div className="layout">
-        <aside className="sidebar left">
+      <nav className="mobile-tabs" aria-label="Main sections">
+        <button
+          type="button"
+          className={mobileView === 'controls' ? 'active' : ''}
+          aria-pressed={mobileView === 'controls'}
+          onClick={() => setMobileView('controls')}
+        >
+          Controls
+        </button>
+        <button
+          type="button"
+          className={mobileView === 'bolt' ? 'active' : ''}
+          aria-pressed={mobileView === 'bolt'}
+          onClick={() => setMobileView('bolt')}
+        >
+          Bolt
+        </button>
+        <button
+          type="button"
+          className={mobileView === 'panels' ? 'active' : ''}
+          aria-pressed={mobileView === 'panels'}
+          onClick={() => setMobileView('panels')}
+        >
+          Panels{panels.length > 0 ? ` (${panels.length})` : ''}
+        </button>
+      </nav>
+
+      <div className={`layout mobile-${mobileView}`}>
+        <aside className="sidebar left" data-mobile-pane="controls">
           <Collapsible
             title="Auto-Nest"
             open={openAutoNest}
@@ -939,12 +969,13 @@ export default function App() {
           </Collapsible>
         </aside>
 
-        <main className="canvas-wrap" ref={canvasWrapRef}>
+        <main className="canvas-wrap" ref={canvasWrapRef} data-mobile-pane="bolt">
           <svg
             width={svgW}
             height={svgH}
             viewBox={`0 0 ${svgW} ${svgH}`}
             className="bolt"
+            style={{ touchAction: 'none' }}
             onPointerMove={onPointerMove}
             onPointerUp={onPointerUp}
             onPointerLeave={onPointerUp}
@@ -1046,7 +1077,7 @@ export default function App() {
           </svg>
         </main>
 
-        <aside className="sidebar right">
+        <aside className="sidebar right" data-mobile-pane="panels">
           <Collapsible
             title="Selected"
             open={openSelected}
