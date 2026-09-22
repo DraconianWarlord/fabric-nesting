@@ -449,3 +449,22 @@ describe('drawNest trap slice clip', () => {
     expect(Math.max(...ys)).toBeCloseTo(20)
   })
 })
+
+describe('formatPanelNestDim circle', () => {
+  it('shows diameter with ⌀', () => {
+    const circle = {
+      id: '1',
+      label: 'C',
+      kind: 'circle' as const,
+      width: 14,
+      length: 14,
+      x: 0,
+      y: 0,
+      rotation: 0 as const,
+      flippedH: false,
+      flippedV: false,
+      color: '#24285e',
+    }
+    expect(formatPanelNestDim(circle, 'in', 0.5)).toBe('⌀ 14 in')
+  })
+})

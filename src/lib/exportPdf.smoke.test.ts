@@ -98,3 +98,45 @@ describe('exportNestingPdf smoke (must exercise full builder)', () => {
     ).not.toThrow()
   })
 })
+
+  it('builds a PDF for circle + trap + rect without throwing', () => {
+    expect(() =>
+      exportNestingPdf({
+        panels: [
+          rect({ id: 'r1', label: 'Rect' }),
+          rect({
+            id: 't1',
+            kind: 'trap',
+            label: 'Trap',
+            topWidth: 12,
+            bottomWidth: 18,
+            length: 20,
+            width: 18,
+            x: 20,
+            y: 0,
+            color: '#8DC63F',
+          }),
+          rect({
+            id: 'c1',
+            kind: 'circle',
+            label: 'Circle',
+            width: 16,
+            length: 16,
+            x: 0,
+            y: 24,
+            color: '#00796b',
+          }),
+        ],
+        fabricWidthIn: 54,
+        seamAllowanceIn: 0.5,
+        waste: 0,
+        unit: 'in',
+        exact: 1.2,
+        order: 2,
+        patterned: false,
+        hRepeatIn: 0,
+        vRepeatIn: 0,
+      }),
+    ).not.toThrow()
+  })
+

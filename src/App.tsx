@@ -14,6 +14,8 @@ import {
   flipH,
   flipV,
   fromInches,
+  circleCutFromFinished,
+  isCircle,
   isGenericLabel,
   isTrap,
   nextSequentialLabel,
@@ -101,9 +103,11 @@ function panelSetIdentity(panels: Panel[]): string {
   return [...panels]
     .sort((a, b) => a.id.localeCompare(b.id))
     .map((p) =>
-      isTrap(p)
-        ? `${p.id}:trap:${p.topWidth}x${p.bottomWidth}x${p.length}`
-        : `${p.id}:rect:${p.width}x${p.length}`,
+      isCircle(p)
+        ? `${p.id}:circle:${p.width}`
+        : isTrap(p)
+          ? `${p.id}:trap:${p.topWidth}x${p.bottomWidth}x${p.length}`
+          : `${p.id}:rect:${p.width}x${p.length}`,
     )
     .join('|')
 }
@@ -275,6 +279,7 @@ export default function App() {
   const [draftTop, setDraftTop] = useState<number | ''>(12)
   const [draftBottom, setDraftBottom] = useState<number | ''>(18)
   const [draftHeight, setDraftHeight] = useState<number | ''>(20)
+  const [draftDiameter, setDraftDiameter] = useState<number | ''>(12)
   const [fabricWidthDraft, setFabricWidthDraft] = useState<number | ''>(54)
   const [seamDraft, setSeamDraft] = useState<number | ''>(0.5)
   const [wasteDraft, setWasteDraft] = useState<number | ''>(0)
@@ -416,6 +421,18 @@ export default function App() {
   }
 
   function draftCutSizes(): { cutW: number; cutL: number; finW: number; finL: number } | null {
+    if (draftKind === 'circle') {
+      if (draftDiameter === '') return null
+      const finD = toInches(Number(draftDiameter), unit)
+      if (!(finD > 0)) return null
+      const cut = circleCutFromFinished(finD, seamAllowanceIn)
+      return {
+        finW: finD,
+        finL: finD,
+        cutW: cut.diameter,
+        cutL: cut.diameter,
+      }
+    }
     if (draftKind === 'trap') {
       if (draftTop === '' || draftBottom === '' || draftHeight === '') return null
       const finTop = toInches(Number(draftTop), unit)
@@ -452,16 +469,26 @@ export default function App() {
     return trapCutFromFinished(finTop, finBot, finH, seamAllowanceIn)
   }
 
+  function draftCircleCut(): ReturnType<typeof circleCutFromFinished> | null {
+    if (draftKind !== 'circle') return null
+    if (draftDiameter === '') return null
+    const finD = toInches(Number(draftDiameter), unit)
+    if (!(finD > 0)) return null
+    return circleCutFromFinished(finD, seamAllowanceIn)
+  }
+
   const draftSplit = (() => {
-    if (draftKind === 'trap') return null // split helper is rect-oriented for now
+    // Split helper is rect-oriented; traps/circles use resize-only messaging.
+    if (draftKind === 'trap' || draftKind === 'circle') return null
     const sizes = draftCutSizes()
     if (!sizes) return null
     return suggestSplit(sizes.cutW, sizes.cutL, fabricWidthIn, seamAllowanceIn)
   })()
 
-  const selectedSplit = selected
-    ? suggestSplit(selected.width, selected.length, fabricWidthIn, seamAllowanceIn)
-    : null
+  const selectedSplit =
+    selected && !isTrap(selected) && !isCircle(selected)
+      ? suggestSplit(selected.width, selected.length, fabricWidthIn, seamAllowanceIn)
+      : null
 
   function placeOrientedPanel(base: Panel, existing: Panel[]): Panel {
     let best: Panel | null = null
@@ -530,7 +557,7 @@ export default function App() {
     if (!sizes) return
     const { cutW: w, cutL: l } = sizes
     const block = panelAddBlockMessage(
-      draftKind === 'trap' ? 'trap' : 'rect',
+      draftKind === 'trap' ? 'trap' : draftKind === 'circle' ? 'circle' : 'rect',
       w,
       l,
       fabricWidthIn,
@@ -541,6 +568,7 @@ export default function App() {
       return
     }
     const trapCut = draftTrapCut()
+    const circleCut = draftCircleCut()
     const qty =
       typeof draftQty === 'number' && draftQty > 0 ? Math.min(40, Math.floor(draftQty)) : 1
     const next = [...panels]
@@ -552,36 +580,52 @@ export default function App() {
         : qty > 1
           ? `${draftLabel} ${i + 1}`
           : draftLabel
-      const base: Panel =
-        draftKind === 'trap' && trapCut
-          ? {
-              id: uid(),
-              label,
-              kind: 'trap',
-              width: trapCut.width,
-              length: trapCut.length,
-              topWidth: trapCut.topWidth,
-              bottomWidth: trapCut.bottomWidth,
-              x: 0,
-              y: 0,
-              rotation: 0,
-              flippedH: false,
-              flippedV: false,
-              color,
-            }
-          : {
-              id: uid(),
-              label,
-              kind: 'rect',
-              width: w,
-              length: l,
-              x: 0,
-              y: 0,
-              rotation: 0,
-              flippedH: false,
-              flippedV: false,
-              color,
-            }
+      let base: Panel
+      if (draftKind === 'circle' && circleCut) {
+        base = {
+          id: uid(),
+          label,
+          kind: 'circle',
+          width: circleCut.diameter,
+          length: circleCut.diameter,
+          x: 0,
+          y: 0,
+          rotation: 0,
+          flippedH: false,
+          flippedV: false,
+          color,
+        }
+      } else if (draftKind === 'trap' && trapCut) {
+        base = {
+          id: uid(),
+          label,
+          kind: 'trap',
+          width: trapCut.width,
+          length: trapCut.length,
+          topWidth: trapCut.topWidth,
+          bottomWidth: trapCut.bottomWidth,
+          x: 0,
+          y: 0,
+          rotation: 0,
+          flippedH: false,
+          flippedV: false,
+          color,
+        }
+      } else {
+        base = {
+          id: uid(),
+          label,
+          kind: 'rect',
+          width: w,
+          length: l,
+          x: 0,
+          y: 0,
+          rotation: 0,
+          flippedH: false,
+          flippedV: false,
+          color,
+        }
+      }
       next.push(placeOrientedPanel(base, next))
     }
     setPanels(next)
@@ -592,14 +636,34 @@ export default function App() {
 
   function updateSelectedFinishedDims(
     id: string,
-    patch: { width?: number; length?: number; topWidth?: number; bottomWidth?: number; height?: number },
+    patch: {
+      width?: number
+      length?: number
+      topWidth?: number
+      bottomWidth?: number
+      height?: number
+      diameter?: number
+    },
   ) {
     setPanels((prev) => {
       const current = prev.find((p) => p.id === id)
       if (!current) return prev
       const others = prev.filter((p) => p.id !== id)
       let next: Panel
-      if (isTrap(current)) {
+      if (isCircle(current)) {
+        const finD =
+          patch.diameter !== undefined
+            ? patch.diameter
+            : Math.max(0, current.width - 2 * seamAllowanceIn)
+        if (!(finD > 0)) return prev
+        const cut = circleCutFromFinished(finD, seamAllowanceIn)
+        next = {
+          ...current,
+          kind: 'circle',
+          width: cut.diameter,
+          length: cut.diameter,
+        }
+      } else if (isTrap(current)) {
         const finTop =
           patch.topWidth !== undefined
             ? patch.topWidth
@@ -1035,7 +1099,48 @@ export default function App() {
               >
                 Trapezoid
               </button>
+              <button
+                type="button"
+                className={draftKind === 'circle' ? 'active' : ''}
+                onClick={() => setDraftKind('circle')}
+              >
+                Circle
+              </button>
             </div>
+            {draftKind === 'circle' && (
+              <figure className="circle-dims-figure" aria-label="Circle finished diameter">
+                <svg
+                  className="circle-dims-svg"
+                  viewBox="0 0 240 200"
+                  role="img"
+                  aria-hidden="true"
+                >
+                  <title>Finished diameter</title>
+                  <circle
+                    cx="120"
+                    cy="95"
+                    r="60"
+                    fill="#f5f5f5"
+                    stroke="#111"
+                    strokeWidth="2.5"
+                  />
+                  <line x1="60" y1="95" x2="180" y2="95" stroke="#24285e" strokeWidth="2" />
+                  <line x1="60" y1="89" x2="60" y2="101" stroke="#24285e" strokeWidth="2" />
+                  <line x1="180" y1="89" x2="180" y2="101" stroke="#24285e" strokeWidth="2" />
+                  <text
+                    x="120"
+                    y="175"
+                    textAnchor="middle"
+                    fill="#24285e"
+                    fontSize="16"
+                    fontWeight="700"
+                    fontFamily="system-ui,sans-serif"
+                  >
+                    Diameter
+                  </text>
+                </svg>
+              </figure>
+            )}
             {draftKind === 'trap' && (
               <figure className="trap-dims-figure" aria-label="Trapezoid finished dimensions">
                 <svg
@@ -1124,6 +1229,20 @@ export default function App() {
                   />
                 </label>
               </>
+            ) : draftKind === 'circle' ? (
+              <>
+                <label>
+                  Diameter ({unit}){seamAllowanceIn > 0 ? ' — finished' : ''}
+                  <SoftNumberInput
+                    min={1}
+                    step={1}
+                    inputMode="decimal"
+                    value={draftDiameter}
+                    onValueChange={setDraftDiameter}
+                  />
+                </label>
+                <p className="hint">Finished diameter only. Cut diameter = finished + 2×seam allowance.</p>
+              </>
             ) : (
               <>
                 <label>
@@ -1163,7 +1282,9 @@ export default function App() {
             )}
             {seamAllowanceIn > 0 && draftSizes && (
               <p className="hint">
-                {draftKind === 'trap' && draftTrapCut() ? (
+                {draftKind === 'circle' && draftCircleCut() ? (
+                  <>Cut ≈ ⌀ {display(draftCircleCut()!.diameter)} {unit}</>
+                ) : draftKind === 'trap' && draftTrapCut() ? (
                   <>
                     Cut ≈ {display(draftTrapCut()!.topWidth)}/{display(draftTrapCut()!.bottomWidth)} ×{' '}
                     {display(draftTrapCut()!.height)} {unit}
@@ -1231,7 +1352,9 @@ export default function App() {
                 Boolean(draftSplit) ||
                 (draftKind === 'rect'
                   ? draftW === '' || draftL === ''
-                  : draftTop === '' || draftBottom === '' || draftHeight === '')
+                  : draftKind === 'circle'
+                    ? draftDiameter === ''
+                    : draftTop === '' || draftBottom === '' || draftHeight === '')
               }
             >
               Add to bolt
@@ -1334,13 +1457,27 @@ export default function App() {
               const points = poly
                 ? poly.map((pt) => `${pt.x * pxPerIn},${pt.y * pxPerIn}`).join(' ')
                 : ''
+              const circ = isCircle(p)
+              const cx = (p.x + fp.w / 2) * pxPerIn
+              const cy = (p.y + fp.h / 2) * pxPerIn
+              const r = (fp.w / 2) * pxPerIn
               return (
                 <g
                   key={p.id}
                   onPointerDown={(e) => onPointerDown(e, p.id)}
                   style={{ cursor: 'grab' }}
                 >
-                  {poly ? (
+                  {circ ? (
+                    <circle
+                      cx={cx}
+                      cy={cy}
+                      r={r}
+                      fill={p.color}
+                      opacity={0.9}
+                      stroke={stroke}
+                      strokeWidth={strokeWidth}
+                    />
+                  ) : poly ? (
                     <polygon
                       points={points}
                       fill={p.color}
@@ -1485,6 +1622,30 @@ export default function App() {
                       />
                     </label>
                   </>
+                ) : isCircle(selected) ? (
+                  <>
+                    <p className="hint">Circle</p>
+                    <label>
+                      Diameter ({unit}){seamAllowanceIn > 0 ? ' — finished' : ''}
+                      <SoftNumberInput
+                        min={0.01}
+                        step={1}
+                        inputMode="decimal"
+                        value={Number(
+                          fromInches(
+                            Math.max(0, selected.width - 2 * seamAllowanceIn),
+                            unit,
+                          ).toFixed(unit === 'in' ? 2 : 1),
+                        )}
+                        onValueChange={(v) => {
+                          if (v === '' || !(v > 0)) return
+                          updateSelectedFinishedDims(selected.id, {
+                            diameter: toInches(v, unit),
+                          })
+                        }}
+                      />
+                    </label>
+                  </>
                 ) : (
                   <>
                     <label>
@@ -1530,15 +1691,19 @@ export default function App() {
                   </>
                 )}
                 <div className="row wrap">
-                  <button type="button" onClick={() => rotateSelected90(selected.id)}>
-                    Rotate 90°
-                  </button>
-                  <button type="button" onClick={() => updatePanelSafe(selected.id, flipH)}>
-                    Flip H
-                  </button>
-                  <button type="button" onClick={() => updatePanelSafe(selected.id, flipV)}>
-                    Flip V
-                  </button>
+                  {!isCircle(selected) && (
+                    <>
+                      <button type="button" onClick={() => rotateSelected90(selected.id)}>
+                        Rotate 90°
+                      </button>
+                      <button type="button" onClick={() => updatePanelSafe(selected.id, flipH)}>
+                        Flip H
+                      </button>
+                      <button type="button" onClick={() => updatePanelSafe(selected.id, flipV)}>
+                        Flip V
+                      </button>
+                    </>
+                  )}
                   <button
                     type="button"
                     onClick={() => {
@@ -1626,15 +1791,26 @@ export default function App() {
                   </div>
                 )}
                 <p className="hint">
-                  Cut footprint {display(panelFootprint(selected).w)} ×{' '}
-                  {display(panelFootprint(selected).h)} {unit}
-                  {isTrap(selected)
-                    ? seamAllowanceIn > 0
-                      ? ` · finished ${display((selected.topWidth ?? selected.width) - 2 * seamAllowanceIn)}/${display((selected.bottomWidth ?? selected.width) - 2 * seamAllowanceIn)} × ${display(selected.length - 2 * seamAllowanceIn)} ${unit}`
-                      : ` · cut ${display(selected.topWidth ?? selected.width)}/${display(selected.bottomWidth ?? selected.width)} × ${display(selected.length)} ${unit}`
-                    : seamAllowanceIn > 0
-                      ? ` · finished ≈ ${display(selected.width - 2 * seamAllowanceIn)} × ${display(selected.length - 2 * seamAllowanceIn)} ${unit}`
-                      : ''}
+                  {isCircle(selected) ? (
+                    <>
+                      Cut ⌀ {display(selected.width)} {unit}
+                      {seamAllowanceIn > 0
+                        ? ` · finished ⌀ ${display(Math.max(0, selected.width - 2 * seamAllowanceIn))} ${unit}`
+                        : ''}
+                    </>
+                  ) : (
+                    <>
+                      Cut footprint {display(panelFootprint(selected).w)} ×{' '}
+                      {display(panelFootprint(selected).h)} {unit}
+                      {isTrap(selected)
+                        ? seamAllowanceIn > 0
+                          ? ` · finished ${display((selected.topWidth ?? selected.width) - 2 * seamAllowanceIn)}/${display((selected.bottomWidth ?? selected.width) - 2 * seamAllowanceIn)} × ${display(selected.length - 2 * seamAllowanceIn)} ${unit}`
+                          : ` · cut ${display(selected.topWidth ?? selected.width)}/${display(selected.bottomWidth ?? selected.width)} × ${display(selected.length)} ${unit}`
+                        : seamAllowanceIn > 0
+                          ? ` · finished ≈ ${display(selected.width - 2 * seamAllowanceIn)} × ${display(selected.length - 2 * seamAllowanceIn)} ${unit}`
+                          : ''}
+                    </>
+                  )}
                 </p>
               </>
             ) : (
@@ -1667,9 +1843,11 @@ export default function App() {
                       <div className="list-main">
                         <span className="list-name">{p.label}</span>
                         <span className="list-dims">
-                          {isTrap(p)
-                            ? `${display(p.topWidth ?? p.width)}/${display(p.bottomWidth ?? p.width)} × ${display(p.length)} ${unit}`
-                            : `${display(fp.w)}×${display(fp.h)} ${unit}`}
+                          {isCircle(p)
+                            ? `⌀ ${display(p.width)} ${unit}`
+                            : isTrap(p)
+                              ? `${display(p.topWidth ?? p.width)}/${display(p.bottomWidth ?? p.width)} × ${display(p.length)} ${unit}`
+                              : `${display(fp.w)}×${display(fp.h)} ${unit}`}
                         </span>
                       </div>
                       <span className="list-flags">

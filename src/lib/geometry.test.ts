@@ -10,6 +10,9 @@ import {
   autoNestCandidates,
   autoNestPanels,
   canPlace,
+  circleCenter,
+  circleCutFromFinished,
+  circleRadius,
   cutSize,
   exactYards,
   findBestSpotOnPattern,
@@ -18,6 +21,7 @@ import {
   nextSequentialLabel,
   offBolt,
   orderYards,
+  orientationsThatFit,
   overlapsAny,
   panelBounds,
   panelFootprint,
@@ -719,5 +723,109 @@ describe('trapezoid geometry', () => {
     const t = trap({ id: 't', topWidth: 12, bottomWidth: 18, height: 20, x: 0, y: 0 })
     expect(panelDimLabel(t)).toBe('12/18 × 20')
     expect(panelDimLabel(p({ id: 'r', width: 10, length: 12, x: 0, y: 0 }))).toBe('10×12')
+  })
+})
+
+describe('circle geometry', () => {
+  function circ(
+    partial: Partial<Panel> & Pick<Panel, 'id' | 'x' | 'y'> & { diameter: number },
+  ): Panel {
+    const { diameter, ...rest } = partial
+    return p({
+      kind: 'circle',
+      width: diameter,
+      length: diameter,
+      ...rest,
+    })
+  }
+
+  it('circleCutFromFinished expands diameter by 2×SA', () => {
+    const c = circleCutFromFinished(12, 0.5)
+    expect(c.diameter).toBe(13)
+    expect(c.width).toBe(13)
+    expect(c.length).toBe(13)
+  })
+
+  it('footprint is square and rotation-invariant', () => {
+    const c = circ({ id: 'c', diameter: 20, x: 0, y: 0 })
+    expect(panelFootprint(c)).toEqual({ w: 20, h: 20 })
+    expect(panelFootprint({ ...c, rotation: 90 })).toEqual({ w: 20, h: 20 })
+    expect(panelFootprint({ ...c, rotation: 180 })).toEqual({ w: 20, h: 20 })
+  })
+
+  it('orientationsThatFit returns [0] when diameter fits, [] when oversized', () => {
+    expect(orientationsThatFit(circ({ id: 'ok', diameter: 20, x: 0, y: 0 }), 54)).toEqual([0])
+    expect(orientationsThatFit(circ({ id: 'big', diameter: 60, x: 0, y: 0 }), 54)).toEqual([])
+  })
+
+  it('circle–circle overlap true when centers closer than r1+r2', () => {
+    const a = circ({ id: 'a', diameter: 20, x: 0, y: 0 }) // center 10,10 r=10
+    const b = circ({ id: 'b', diameter: 20, x: 15, y: 0 }) // center 25,10 — dist 15 < 20
+    expect(overlapsAny(a, [b])).toBe(true)
+    expect(canPlace(a, [b], 54)).toBe(false)
+  })
+
+  it('circle–circle touching edges does not overlap', () => {
+    const a = circ({ id: 'a', diameter: 20, x: 0, y: 0 }) // center 10,10
+    const b = circ({ id: 'b', diameter: 20, x: 20, y: 0 }) // center 30,10 — dist 20 == r1+r2
+    expect(overlapsAny(a, [b])).toBe(false)
+    expect(canPlace(b, [a], 54)).toBe(true)
+  })
+
+  it('circle fits bolt / blocked when diameter exceeds width', () => {
+    const ok = circ({ id: 'ok', diameter: 20, x: 0, y: 0 })
+    expect(canPlace(ok, [], 54)).toBe(true)
+    const big = circ({ id: 'big', diameter: 60, x: 0, y: 0 })
+    expect(offBolt(big, 54)).toBe(true)
+    expect(canPlace(big, [], 54)).toBe(false)
+  })
+
+  it('autoNest places non-overlapping circles', () => {
+    const panels = [
+      circ({ id: 'c1', diameter: 18, x: 0, y: 0 }),
+      circ({ id: 'c2', diameter: 18, x: 0, y: 0 }),
+      circ({ id: 'c3', diameter: 18, x: 0, y: 0 }),
+    ]
+    const nested = autoNestPanels(panels, 54)
+    expect(nested).toHaveLength(3)
+    for (const panel of nested) {
+      expect(canPlace(panel, nested, 54)).toBe(true)
+    }
+  })
+
+  it('rotate90 / tryRotate90 are no-ops for circles', () => {
+    const c = circ({ id: 'c', diameter: 16, x: 2, y: 3 })
+    expect(rotate90(c)).toBe(c)
+    const next = tryRotate90(c, [], 54)
+    expect(next).toEqual(c)
+    expect(next!.rotation).toBe(0)
+  })
+
+  it('panelDimLabel shows diameter', () => {
+    expect(panelDimLabel(circ({ id: 'c', diameter: 12, x: 0, y: 0 }))).toBe('⌀12')
+  })
+
+  it('circleCenter and circleRadius from AABB', () => {
+    const c = circ({ id: 'c', diameter: 10, x: 4, y: 6 })
+    expect(circleCenter(c)).toEqual({ x: 9, y: 11 })
+    expect(circleRadius(c)).toBe(5)
+  })
+
+  it('circle–rect uses closest-point AABB (can nest tighter than square–square)', () => {
+    // Circle diameter 20 at (0,0); rect 10×10 whose AABB overlaps the circle's square
+    // but sits in a corner outside the circle.
+    const circle = circ({ id: 'c', diameter: 20, x: 0, y: 0 }) // center 10,10 r=10
+    // Place a 6×6 rect at (0,0) — closest point to center is (6,6), dist≈5.66 < 10 → overlap
+    const overlapping = p({ id: 'r', width: 6, length: 6, x: 0, y: 0 })
+    expect(overlapsAny(circle, [overlapping])).toBe(true)
+    // Rect far in corner of the AABB square but outside circle: at (0,0) wait that's inside.
+    // Corner of AABB outside circle: e.g. rect at x=0,y=0 with size that only occupies
+    // near (0,0). Closest point from (10,10) to a 1×1 at (0,0) is (1,1), dist≈12.7 > 10
+    const corner = p({ id: 'corner', width: 1, length: 1, x: 0, y: 0 })
+    expect(overlapsAny(circle, [corner])).toBe(false)
+    // Same corner would collide if treated as square–square AABB:
+    expect(
+      aabbOverlap(panelBounds(circle), panelBounds(corner)),
+    ).toBe(true)
   })
 })

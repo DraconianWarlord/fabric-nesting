@@ -7,7 +7,10 @@ import autoTable from 'jspdf-autotable'
 import {
   type Panel,
   type Unit,
+  circleCenter,
+  circleRadius,
   fromInches,
+  isCircle,
   isTrap,
   panelFootprint,
   panelPolygon,
@@ -283,6 +286,13 @@ export function fmtDim(inches: number, unit: Unit): string {
 }
 
 export function finishedSize(panel: Panel, seamAllowanceIn: number): { w: number; h: number } {
+  if (isCircle(panel)) {
+    const d =
+      seamAllowanceIn <= 0
+        ? panel.width
+        : Math.max(0, panel.width - 2 * seamAllowanceIn)
+    return { w: d, h: d }
+  }
   if (isTrap(panel)) {
     const top = panel.topWidth ?? panel.width
     const bot = panel.bottomWidth ?? panel.width
@@ -329,6 +339,9 @@ export function formatPanelNestDim(
   unit: Unit,
   _seamAllowanceIn: number,
 ): string {
+  if (isCircle(panel)) {
+    return `⌀ ${fmtDim(panel.width, unit)} ${unit}`
+  }
   if (isTrap(panel)) {
     const top = panel.topWidth ?? panel.width
     const bot = panel.bottomWidth ?? panel.width
@@ -494,7 +507,18 @@ export function drawNest(
     doc.setDrawColor(20, 20, 30)
     doc.setLineWidth(0.6)
 
-    if (isTrap(p)) {
+    if (isCircle(p)) {
+      // Draw true circle; bolt-slice clip handles panels that span page yards (MVP).
+      const c = circleCenter(p)
+      const r = circleRadius(p)
+      const { x: cx, y: cy } = fabricToPdf(c.x, c.y, scale, sliceStart)
+      const rPt = inchesToPdfPt(r, scale)
+      doc.saveGraphicsState()
+      doc.rect(scale.originX, scale.originY, boltWpt, boltHpt)
+      doc.clip()
+      doc.circle(cx, cy, rPt, 'FD')
+      doc.restoreGraphicsState()
+    } else if (isTrap(p)) {
       // Clip cut polygon to this page's fabric Y slice (and bolt X) before PDF transform.
       // Without this, unclipped vertices map outside the bolt and draw huge skewed triangles.
       let poly = clipPolygonToYRange(panelPolygon(p), sliceStart, sliceEnd)
@@ -689,19 +713,23 @@ export function exportNestingPdf(input: ExportPdfInput): string {
   const tableBody = panels.map((p) => {
     const fp = panelFootprint(p)
     let finishedStr: string
-    if (isTrap(p)) {
+    let cutStr: string
+    if (isCircle(p)) {
+      const fin = finishedSize(p, seamAllowanceIn)
+      finishedStr = `⌀ ${fmtDim(fin.w, u)} ${u}`
+      cutStr = `⌀ ${fmtDim(p.width, u)} ${u}`
+    } else if (isTrap(p)) {
       const t = finishedTrapSize(p, seamAllowanceIn)
       finishedStr = `${fmtDim(t.top, u)}/${fmtDim(t.bottom, u)} × ${fmtDim(t.height, u)} ${u}`
+      cutStr = `${fmtDim(p.topWidth ?? p.width, u)}/${fmtDim(p.bottomWidth ?? p.width, u)} × ${fmtDim(p.length, u)} ${u}`
     } else {
       const fin = finishedSize(p, seamAllowanceIn)
       finishedStr =
         seamAllowanceIn > 0
           ? `${fmtDim(fin.w, u)} × ${fmtDim(fin.h, u)} ${u}`
           : `${fmtDim(p.width, u)} × ${fmtDim(p.length, u)} ${u}`
+      cutStr = `${fmtDim(fp.w, u)} × ${fmtDim(fp.h, u)} ${u}`
     }
-    const cutStr = isTrap(p)
-      ? `${fmtDim(p.topWidth ?? p.width, u)}/${fmtDim(p.bottomWidth ?? p.width, u)} × ${fmtDim(p.length, u)} ${u}`
-      : `${fmtDim(fp.w, u)} × ${fmtDim(fp.h, u)} ${u}`
     return [p.label, finishedStr, cutStr, '1']
   })
 

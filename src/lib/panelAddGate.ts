@@ -1,6 +1,6 @@
 import { suggestSplit } from './geometry'
 
-export type PanelAddKind = 'rect' | 'trap'
+export type PanelAddKind = 'rect' | 'trap' | 'circle'
 
 /** User-facing block when a rect needs splitting (neither orientation fits). */
 export const PANEL_TOO_LARGE_SPLIT =
@@ -24,6 +24,11 @@ export function panelAddBlockMessage(
   if (!(cutW > 0) || !(cutL > 0) || !(fabricWidth > 0)) return null
   if (kind === 'rect' && suggestSplit(cutW, cutL, fabricWidth, seamAllowance)) {
     return PANEL_TOO_LARGE_SPLIT
+  }
+  // Circles store cut diameter as both width & length; oversized → resize-only (no split).
+  // Same string as oversized trap.
+  if (kind === 'circle' && cutW > fabricWidth + 1e-6) {
+    return PANEL_TOO_LARGE_RESIZE
   }
   if (cutW > fabricWidth + 1e-6 && cutL > fabricWidth + 1e-6) {
     return PANEL_TOO_LARGE_RESIZE

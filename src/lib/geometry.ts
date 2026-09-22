@@ -21,7 +21,7 @@ export function cutSize(finished: number, seamAllowance: number): number {
   return finished + 2 * seamAllowance
 }
 
-export type PanelKind = 'rect' | 'trap'
+export type PanelKind = 'rect' | 'trap' | 'circle'
 
 export interface Point {
   x: number
@@ -37,15 +37,17 @@ export interface Panel {
    * - `'trap'`: trapezoid with parallel top & bottom (across bolt at rotation=0).
    *   Stores cut `topWidth` / `bottomWidth`; `length` is cut height; `width` is
    *   unrotated AABB width = max(topWidth, bottomWidth).
+   * - `'circle'`: circle from finished diameter; `width` = `length` = cut diameter.
+   *   `topWidth` / `bottomWidth` unused. Rotation-invariant (footprint always square).
    */
   kind?: PanelKind
-  /** Unrotated cut width (across bolt when rotation=0). For traps: max(top,bottom). */
+  /** Unrotated cut width (across bolt when rotation=0). For traps: max(top,bottom). For circles: cut diameter. */
   width: number
-  /** Unrotated cut length (down bolt when rotation=0). For traps: cut height. */
+  /** Unrotated cut length (down bolt when rotation=0). For traps: cut height. For circles: cut diameter (= width). */
   length: number
-  /** Trap only: cut top parallel-edge width (local y=0). */
+  /** Trap only: cut top parallel-edge width (local y=0). Unused for circles. */
   topWidth?: number
-  /** Trap only: cut bottom parallel-edge width (local y=length). */
+  /** Trap only: cut bottom parallel-edge width (local y=length). Unused for circles. */
   bottomWidth?: number
   /** Top-left X on bolt (inches) — AABB of the oriented cut polygon */
   x: number
@@ -61,6 +63,56 @@ export interface Panel {
 /** True when panel is a trapezoid (explicit kind). */
 export function isTrap(p: Panel): boolean {
   return p.kind === 'trap'
+}
+
+/** True when panel is a circle (explicit kind). */
+export function isCircle(p: Panel): boolean {
+  return p.kind === 'circle'
+}
+
+/** N-gon sides used when a circle needs a polygon (e.g. circle–trap overlap, PDF fallback). */
+export const CIRCLE_APPROX_SIDES = 32
+
+/**
+ * Seam allowance for circles: cut diameter = finished diameter + 2×SA
+ * (same expand-each-dim rule as rect/trap). Returns width=length=diameter.
+ */
+export function circleCutFromFinished(
+  finishedDiameter: number,
+  seamAllowance: number,
+): { diameter: number; width: number; length: number } {
+  const sa = Math.max(0, seamAllowance)
+  const diameter = finishedDiameter + 2 * sa
+  return { diameter, width: diameter, length: diameter }
+}
+
+/** World-space center of a circle panel (AABB center = geometric center). */
+export function circleCenter(p: Panel): Point {
+  const d = p.width
+  return { x: p.x + d / 2, y: p.y + d / 2 }
+}
+
+/** Cut radius from stored cut diameter (`width`). */
+export function circleRadius(p: Panel): number {
+  return p.width / 2
+}
+
+/**
+ * Local cut circle as regular N-gon (CCW), AABB origin at (0,0), diameter = width.
+ * Used for circle–trap SAT and any helper that needs a polygon outline.
+ */
+export function localCirclePolygon(p: Panel, sides = CIRCLE_APPROX_SIDES): Point[] {
+  const d = p.width
+  const r = d / 2
+  const cx = r
+  const cy = r
+  const pts: Point[] = []
+  for (let i = 0; i < sides; i++) {
+    // Start at top (−90°) so the first vertex is centered on the top edge.
+    const ang = (i / sides) * Math.PI * 2 - Math.PI / 2
+    pts.push({ x: cx + r * Math.cos(ang), y: cy + r * Math.sin(ang) })
+  }
+  return pts
 }
 
 /**
@@ -145,8 +197,14 @@ function rotateCwNormalize(pts: Point[], rotation: 0 | 90 | 180 | 270): Point[] 
  * as the top-left of the oriented AABB (same anchor as rectangles).
  */
 export function panelPolygon(p: Panel): Point[] {
-  const local = isTrap(p) ? localTrapPolygon(p) : localRectPolygon(p)
-  const w = isTrap(p) ? Math.max(p.topWidth ?? 0, p.bottomWidth ?? 0, p.width) : p.width
+  const local = isCircle(p)
+    ? localCirclePolygon(p)
+    : isTrap(p)
+      ? localTrapPolygon(p)
+      : localRectPolygon(p)
+  const w = isTrap(p)
+    ? Math.max(p.topWidth ?? 0, p.bottomWidth ?? 0, p.width)
+    : p.width
   const h = p.length
   const flipped = applyFlip(local, w, h, p.flippedH, p.flippedV)
   const oriented = rotateCwNormalize(flipped, p.rotation)
@@ -209,6 +267,9 @@ export function polygonsOverlap(a: Point[], b: Point[], eps = 1e-6): boolean {
 
 /** Human-readable size string for lists / labels. */
 export function panelDimLabel(p: Panel): string {
+  if (isCircle(p)) {
+    return `⌀${p.width}`
+  }
   if (isTrap(p)) {
     const top = p.topWidth ?? p.width
     const bot = p.bottomWidth ?? p.width
@@ -218,6 +279,11 @@ export function panelDimLabel(p: Panel): string {
 }
 
 export function panelFootprint(p: Panel): { w: number; h: number } {
+  if (isCircle(p)) {
+    // Rotation-invariant: cut diameter square AABB.
+    const d = p.width
+    return { w: d, h: d }
+  }
   if (isTrap(p)) {
     // Oriented AABB from the cut polygon (handles flip + rotation).
     const b = polygonAabb(panelPolygon({ ...p, x: 0, y: 0 }))
@@ -258,18 +324,57 @@ export function aabbOverlap(
   return a.x1 < b.x2 - eps && a.x2 > b.x1 + eps && a.y1 < b.y2 - eps && a.y2 > b.y1 + eps
 }
 
+/**
+ * Circle vs axis-aligned AABB: true when closest point on the box is inside the circle
+ * (strict: touching counts as non-overlapping via eps, matching polygonsOverlap).
+ */
+export function circleOverlapsAabb(
+  circle: Panel,
+  box: { x1: number; y1: number; x2: number; y2: number },
+  eps = 1e-6,
+): boolean {
+  const c = circleCenter(circle)
+  const r = circleRadius(circle)
+  const qx = Math.max(box.x1, Math.min(c.x, box.x2))
+  const qy = Math.max(box.y1, Math.min(c.y, box.y2))
+  const dist = Math.hypot(c.x - qx, c.y - qy)
+  return dist < r - eps
+}
+
+/** Circle–circle: centers closer than r1+r2 (touching = non-overlap). */
+export function circleOverlapsCircle(a: Panel, b: Panel, eps = 1e-6): boolean {
+  const ca = circleCenter(a)
+  const cb = circleCenter(b)
+  const dist = Math.hypot(ca.x - cb.x, ca.y - cb.y)
+  return dist < circleRadius(a) + circleRadius(b) - eps
+}
+
+/**
+ * Overlap dispatch (MVP):
+ * - circle–circle: true circle math (center distance)
+ * - circle–rect (axis-aligned footprint): closest-point-on-AABB
+ * - circle–trap: N-gon approximation via polygonsOverlap(panelPolygon(circle), trapPoly)
+ * - trap–*: convex SAT; rect–rect: AABB
+ */
 export function overlapsAny(panel: Panel, others: Panel[]): boolean {
   const aBounds = panelBounds(panel)
-  const aIsTrap = isTrap(panel)
-  const aPoly = aIsTrap || others.some(isTrap) ? panelPolygon(panel) : null
   return others.some((o) => {
     if (o.id === panel.id) return false
     // Fast reject via AABB
     if (!aabbOverlap(aBounds, panelBounds(o))) return false
+
+    const aCirc = isCircle(panel)
+    const bCirc = isCircle(o)
+    if (aCirc && bCirc) return circleOverlapsCircle(panel, o)
+    if (aCirc && isTrap(o)) return polygonsOverlap(panelPolygon(panel), panelPolygon(o))
+    if (bCirc && isTrap(panel)) return polygonsOverlap(panelPolygon(panel), panelPolygon(o))
+    if (aCirc) return circleOverlapsAabb(panel, panelBounds(o))
+    if (bCirc) return circleOverlapsAabb(o, panelBounds(panel))
+
     // Two axis-aligned rects: AABB is exact
-    if (!aIsTrap && !isTrap(o)) return true
+    if (!isTrap(panel) && !isTrap(o)) return true
     // Trap involved: convex polygon SAT
-    return polygonsOverlap(aPoly ?? panelPolygon(panel), panelPolygon(o))
+    return polygonsOverlap(panelPolygon(panel), panelPolygon(o))
   })
 }
 
@@ -291,6 +396,8 @@ export function canPlace(panel: Panel, others: Panel[], fabricWidth: number): bo
 }
 
 export function rotate90(panel: Panel): Panel {
+  // Circles are rotation-invariant — keep pose (UI also hides Rotate 90).
+  if (isCircle(panel)) return panel
   const next = ((panel.rotation + 90) % 360) as 0 | 90 | 180 | 270
   return { ...panel, rotation: next }
 }
@@ -310,8 +417,11 @@ export function clampPanelToBolt(panel: Panel, fabricWidth: number): Panel {
   return { ...panel, x, y }
 }
 
-/** Rotations 0/90 whose footprint width fits on the bolt. */
+/** Rotations 0/90 whose footprint width fits on the bolt. Circles: [0] only (90° identical). */
 export function orientationsThatFit(panel: Panel, fabricWidth: number): Array<0 | 90> {
+  if (isCircle(panel)) {
+    return panel.width <= fabricWidth + 1e-6 ? [0] : []
+  }
   const out: Array<0 | 90> = []
   for (const rotation of [0, 90] as const) {
     const fp = panelFootprint({ ...panel, rotation })
@@ -1049,6 +1159,9 @@ export function tryRotate90(
     existing: Panel[],
   ) => { x: number; y: number } = (w, h, existing) => findBestSpot(w, h, fabricWidth, existing),
 ): Panel | null {
+  // Circles: rotate is a visual no-op — return the same panel (UI hides the control).
+  if (isCircle(panel)) return panel
+
   const rotated = rotate90(panel)
   const fp = panelFootprint(rotated)
   // Rotated cut width must fit across the bolt.

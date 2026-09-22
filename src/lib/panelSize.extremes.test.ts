@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import {
   autoNestPanels,
+  circleCutFromFinished,
   cutSize,
   orientationsThatFit,
   panelFootprint,
@@ -176,6 +177,65 @@ describe('extreme panel sizes — tiny + huge rect/trap', () => {
     it('fits no orientation on the bolt', () => {
       const panel = trapPanel('huge-trap', cut)
       expect(orientationsThatFit(panel, BOLT)).toEqual([])
+    })
+  })
+})
+
+
+function circlePanel(id: string, cutDiameter: number): Panel {
+  return {
+    id,
+    label: id,
+    kind: 'circle',
+    width: cutDiameter,
+    length: cutDiameter,
+    x: 0,
+    y: 0,
+    rotation: 0,
+    flippedH: false,
+    flippedV: false,
+    color: '#00796b',
+  }
+}
+
+describe('extreme circle sizes', () => {
+  describe('very small circle', () => {
+    const finD = 0.5
+    const cut = circleCutFromFinished(finD, SA)
+
+    it('cut diameter is finished + 2×SA', () => {
+      expect(cut.diameter).toBeCloseTo(1.5, 6)
+      expect(cut.width).toBe(cut.diameter)
+      expect(cut.length).toBe(cut.diameter)
+    })
+
+    it('does not block add', () => {
+      expect(panelAddBlockMessage('circle', cut.diameter, cut.diameter, BOLT, SA)).toBeNull()
+    })
+
+    it('fits and nests', () => {
+      const panel = circlePanel('tiny-circ', cut.diameter)
+      expect(orientationsThatFit(panel, BOLT)).toEqual([0])
+      const nested = autoNestPanels([panel], BOLT)
+      expect(nested).toHaveLength(1)
+    })
+  })
+
+  describe('very large circle', () => {
+    const cut = circleCutFromFinished(80, SA)
+
+    it('cut diameter exceeds the bolt', () => {
+      expect(cut.diameter).toBeGreaterThan(BOLT)
+    })
+
+    it('blocks add with the resize-only error message (no split path)', () => {
+      expect(
+        panelAddBlockMessage('circle', cut.diameter, cut.diameter, BOLT, SA),
+      ).toBe(PANEL_TOO_LARGE_RESIZE)
+    })
+
+    it('fits no orientation on the bolt', () => {
+      expect(orientationsThatFit(circlePanel('huge-circ', cut.diameter), BOLT)).toEqual([])
     })
   })
 })
