@@ -96,6 +96,36 @@ function formatYd(inches: number): string {
  * callers should size full pages so ≥1 yd fits at the chosen scale). The last page
  * may end at boltH even when that is not a whole yard.
  */
+
+/**
+ * Choose nest page scale + whole yards per page so the bolt uses the page.
+ *
+ * Width-fit alone often leaves a tall blank band (only 1 yd fits at full width
+ * scale when ~1.7 yd of height is free). We pick the nearest whole-yard count
+ * that can fill `usableHeightPt`, shrinking scale slightly below width-fit when
+ * that packs another yard and fills the page.
+ */
+export function chooseNestPageScale(
+  widthPtPerIn: number,
+  usableHeightPt: number,
+  minPtPerIn = 1.5,
+): { ptPerIn: number; yardsPerPage: number } {
+  const YARD = 36
+  const widthScale = Math.max(minPtPerIn, widthPtPerIn)
+  const usable = Math.max(YARD * minPtPerIn, usableHeightPt)
+  const maxYards = Math.max(1, Math.floor(usable / (minPtPerIn * YARD)))
+  // How many yards fit at pure width scale (fractional)
+  const yardsAtWidth = usable / (widthScale * YARD)
+  // Round to nearest whole yard so we fill height (e.g. 1.7 → 2 yd, scale down a bit)
+  let yardsPerPage = Math.min(maxYards, Math.max(1, Math.round(yardsAtWidth)))
+  // Prefer filling the page: if rounding down left >35% of a yard unused, bump up when possible
+  if (yardsPerPage < maxYards && yardsAtWidth - Math.floor(yardsAtWidth) > 0.35) {
+    yardsPerPage = Math.min(maxYards, Math.floor(yardsAtWidth) + 1)
+  }
+  const ptPerIn = Math.min(widthScale, usable / (yardsPerPage * YARD))
+  return { ptPerIn, yardsPerPage }
+}
+
 export function computeNestSlices(
   usedLengthIn: number,
   ptPerIn: number,
@@ -621,8 +651,9 @@ export function exportNestingPdf(input: ExportPdfInput): string {
   )
   const firstUsableH = fullUsableH
 
-  // Clamp so a full nest page can fit ≥1 yard (width-fit still applies)
-  const ptPerIn = Math.min(baseScale.ptPerIn, fullUsableH / 36)
+  // Pack whole yards and scale so each nest page fills vertically (avoids a
+  // short 1-yd strip atop a mostly blank page).
+  const { ptPerIn } = chooseNestPageScale(baseScale.ptPerIn, fullUsableH)
 
   const slices = computeNestSlices(used, ptPerIn, firstUsableH, fullUsableH)
 

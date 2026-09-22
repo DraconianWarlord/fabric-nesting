@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest'
 import {
   DEFAULT_PT_PER_IN,
   FIRST_NEST_PAGE,
+  chooseNestPageScale,
   computeNestSlices,
   fabricToPdf,
   fitNestScale,
@@ -243,5 +244,33 @@ describe('formatPanelNestDim trapezoid', () => {
       color: '#24285e',
     }
     expect(formatPanelNestDim(trap, 'in', 0.5)).toBe('12/20 × 16 in')
+  })
+})
+
+describe('chooseNestPageScale', () => {
+  it('packs 2 yards (slightly smaller scale) when width-fit leaves ~0.7 yd empty', () => {
+    // width scale 9.8pt/in, usable 600pt → 600/(9.8*36) ≈ 1.70 yd at width scale
+    const { ptPerIn, yardsPerPage } = chooseNestPageScale(9.8, 600)
+    expect(yardsPerPage).toBe(2)
+    expect(ptPerIn).toBeLessThanOrEqual(9.8 + 1e-9)
+    expect(yardsPerPage * 36 * ptPerIn).toBeCloseTo(600, 0)
+  })
+
+  it('scales a single yard up to fill height when width scale is large', () => {
+    // narrow fabric / large width scale: only ~0.8 yd of height at width scale
+    const { ptPerIn, yardsPerPage } = chooseNestPageScale(20, 600)
+    expect(yardsPerPage).toBe(1)
+    expect(ptPerIn).toBeCloseTo(600 / 36, 5)
+  })
+
+  it('keeps yard-aligned packing with the chosen scale', () => {
+    const used = 36 * 5
+    const { ptPerIn } = chooseNestPageScale(9.8, 600)
+    const slices = computeNestSlices(used, ptPerIn, 600, 600)
+    for (let i = 0; i < slices.length - 1; i++) {
+      expect(slices[i].endIn % 36).toBeCloseTo(0)
+      // each non-final slice should be about 2 yards with the 600/9.8 case
+      expect(slices[i].endIn - slices[i].startIn).toBeGreaterThanOrEqual(36)
+    }
   })
 })
