@@ -702,3 +702,7 @@ button.clear-all {
   border-bottom: 1px solid var(--sr-border);
 }
 .bolt-mobile-bar .primary { margin: 0; }
+
+.add-panel-auto-nest {
+  margin-top: 0.5rem;
+}

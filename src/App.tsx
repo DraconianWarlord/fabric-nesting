@@ -257,7 +257,6 @@ export default function App() {
   const [nestCycleIndex, setNestCycleIndex] = useState(0)
   const [nestHint, setNestHint] = useState<string | null>(null)
   const [actionHint, setActionHint] = useState<string | null>(null)
-  const [openAutoNest, setOpenAutoNest] = useState(true)
   const [openFabric, setOpenFabric] = useState(true)
   const [openAdd, setOpenAdd] = useState(true)
   const [openSelected, setOpenSelected] = useState(true)
@@ -858,26 +857,6 @@ export default function App() {
 
       <div className={`layout mobile-${mobileView}`}>
         <aside className="sidebar left" data-mobile-pane="controls">
-          <Collapsible
-            title="Auto-Nest"
-            open={openAutoNest}
-            onToggle={() => setOpenAutoNest((v) => !v)}
-          >
-            <button
-              type="button"
-              className="primary auto-nest"
-              title="Cycle through ranked nest layouts"
-              onClick={runAutoNest}
-              disabled={panels.length === 0}
-            >
-              Auto-Nest
-            </button>
-            {nestHint && <p className="hint nest-hint">{nestHint}</p>}
-            {!nestHint && (
-              <p className="hint">Each click cycles a different ranked layout.</p>
-            )}
-          </Collapsible>
-
           <Collapsible title="Fabric" open={openFabric} onToggle={() => setOpenFabric((v) => !v)}>
             <label>
               Width ({unit})
@@ -1241,6 +1220,19 @@ export default function App() {
             >
               Add to bolt
             </button>
+            <button
+              type="button"
+              className="primary auto-nest add-panel-auto-nest"
+              title="Cycle through ranked nest layouts"
+              onClick={runAutoNest}
+              disabled={panels.length === 0}
+            >
+              Auto-Nest
+            </button>
+            {nestHint && <p className="hint nest-hint">{nestHint}</p>}
+            {!nestHint && panels.length > 0 && (
+              <p className="hint">Each click cycles a different ranked layout.</p>
+            )}
           </Collapsible>
         </aside>
 
