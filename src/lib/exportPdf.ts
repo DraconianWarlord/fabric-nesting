@@ -446,8 +446,12 @@ function drawFooter(doc: jsPDF, margin: number, pageH: number): void {
   doc.text(
     'Estimate only. Double-check before cutting or ordering. Sailrite sells full yards.',
     margin,
-    pageH - 18,
+    pageH - 26,
   )
+  doc.setTextColor(36, 40, 94)
+  doc.textWithLink('Shop fabric & supplies at sailrite.com', margin, pageH - 16, {
+    url: 'https://www.sailrite.com/?utm_source=sailrite_calculators&utm_medium=nesting&utm_campaign=fabric_nesting&utm_content=pdf_footer',
+  })
 }
 
 /**
