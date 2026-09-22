@@ -1454,19 +1454,16 @@ export default function App() {
                   >
                     Right
                   </text>
-                  {/* Diagonal — parallel dim outside the dashed panel diagonal */}
-                  <line x1="95" y1="148" x2="265" y2="58" stroke="#24285e" strokeWidth="2" />
-                  <line x1="90" y1="142" x2="100" y2="154" stroke="#24285e" strokeWidth="2" />
-                  <line x1="260" y1="52" x2="270" y2="64" stroke="#24285e" strokeWidth="2" />
+                  {/* Diagonal label sits on the dashed line only — no tick-mark dim style */}
                   <text
                     x="190"
-                    y="92"
+                    y="108"
                     textAnchor="middle"
                     fill="#24285e"
                     fontSize="14"
                     fontWeight="700"
                     fontFamily="system-ui,sans-serif"
-                    transform="rotate(-28 190 92)"
+                    transform="rotate(-28 190 108)"
                   >
                     Diagonal
                   </text>
