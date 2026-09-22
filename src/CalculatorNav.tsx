@@ -5,7 +5,21 @@ import {
   type Calculator,
 } from './calculators'
 
-function SoonItem({ calc, className }: { calc: Calculator; className?: string }) {
+function MoreItem({ calc, className }: { calc: Calculator; className?: string }) {
+  if (calc.status === 'live' && calc.href) {
+    return (
+      <a
+        className={className}
+        href={calc.href}
+        target="_blank"
+        rel="noopener noreferrer"
+        role="menuitem"
+      >
+        <span>{calc.label}</span>
+        <span className="calc-more-live">Open</span>
+      </a>
+    )
+  }
   return (
     <button
       type="button"
@@ -62,7 +76,7 @@ export function CalculatorNav() {
           <ul className="calc-more-menu" role="menu">
             {OTHER_CALCULATORS.map((c) => (
               <li key={c.id} role="none">
-                <SoonItem calc={c} className="calc-more-item" />
+                <MoreItem calc={c} className="calc-more-item" />
               </li>
             ))}
           </ul>
@@ -108,7 +122,7 @@ export function MobileMoreCalculators() {
         <ul className="calc-more-menu calc-more-menu--mobile" role="menu">
           {OTHER_CALCULATORS.map((c) => (
             <li key={c.id} role="none">
-              <SoonItem calc={c} className="calc-more-item" />
+              <MoreItem calc={c} className="calc-more-item" />
             </li>
           ))}
         </ul>

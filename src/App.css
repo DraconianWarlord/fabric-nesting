@@ -171,7 +171,13 @@ body { margin: 0; background: var(--sr-bg); }
   cursor: not-allowed;
   white-space: nowrap;
   border-radius: 6px;
+  text-decoration: none;
 }
+
+button.calc-more-item { cursor: not-allowed; }
+a.calc-more-item { cursor: pointer; }
+a.calc-more-item:hover { background: rgba(255, 255, 255, 0.08); }
+
 .calc-more-menu > li {
   list-style: none;
   margin: 0;
@@ -189,6 +195,17 @@ body { margin: 0; background: var(--sr-bg); }
   border-radius: 999px;
   background: #fff;
   border: 1px solid #fff;
+}
+.calc-more-live {
+  flex-shrink: 0;
+  font-size: 0.72rem;
+  font-weight: 700;
+  color: #fff;
+  letter-spacing: 0.02em;
+  padding: 0.2rem 0.5rem;
+  border-radius: 999px;
+  background: var(--sr-action);
+  border: 1px solid rgba(255, 255, 255, 0.35);
 }
 .calc-more-mobile {
   display: none;

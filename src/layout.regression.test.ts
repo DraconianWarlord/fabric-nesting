@@ -71,15 +71,19 @@ describe('layout regressions', () => {
     expect(mobile![0]).toMatch(/\.canvas-wrap\s*\{[^}]*overflow-x:\s*hidden/)
   })
 
-  it('center nav is current-only + More; Coming soon chip is high-contrast', () => {
+  it('center nav is current-only + More; status chips are high-contrast', () => {
     expect(calcNav).not.toMatch(/PRIMARY_PILLS_MQ/)
     expect(calcNav).not.toMatch(/PRIMARY_SOON|MORE_ONLY/)
     expect(calcNav).toMatch(/OTHER_CALCULATORS/)
     expect(calcNav).not.toMatch(/calc-more-item--current/)
     expect(calcNav).not.toMatch(/Coming soon[\s\S]*Current|Current[\s\S]*Coming soon/)
+    expect(calcNav).toMatch(/status === 'live'/)
+    expect(calcNav).toMatch(/target="_blank"/)
+    expect(calcNav).toMatch(/calc-more-live/)
     expect(appCss).toMatch(/\.calc-more-soon\s*\{[^}]*background:\s*#fff/)
     expect(appCss).toMatch(/\.calc-more-soon\s*\{[^}]*color:\s*#111/)
     expect(appCss).toMatch(/\.calc-more-soon\s*\{[^}]*font-weight:\s*700/)
+    expect(appCss).toMatch(/\.calc-more-live\s*\{[^}]*background:\s*var\(--sr-action\)/)
   })
 
 })
