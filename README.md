@@ -1,5 +1,8 @@
 # Sailrite Fabric Nesting (prototype)
 
+> **Suite monorepo:** active development continues in [DraconianWarlord/fabric-calculators](https://github.com/DraconianWarlord/fabric-calculators) (`packages/calculators/`). This standalone repo is kept for history.
+
+
 Local MVP of a fabric nesting tool inspired by [Sailrite’s Fabric Nesting app](https://www.fabric-calculator.com/fabric_nesting/index.html).
 
 ## Features (MVP)
