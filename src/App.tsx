@@ -1005,10 +1005,6 @@ export default function App() {
             <div className="yards" aria-label="Yardage summary">
               <span className="yards-exact">{exact.toFixed(2)} yd</span>
               <span className="yards-order">Order {order} yd</span>
-              <span className="yards-meta">
-                Used {display(used)} {unit}
-                {waste > 0 ? ` · +${waste}%` : ''}
-              </span>
             </div>
             <a
               className="shop-sailrite"
