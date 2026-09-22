@@ -1367,14 +1367,22 @@ export default function App() {
                   role="img"
                   aria-hidden="true"
                 >
-                  <title>Left, Front, Right, Back, and Diagonal</title>
+                  <title>Left, Bottom, Right, Top, and Diagonal</title>
+                  <defs>
+                    {/* Label paths sit just outside each edge so text follows the line */}
+                    <path id="irreg-label-bottom" d="M 60 192 L 250 192" />
+                    <path id="irreg-label-top" d="M 32 62 L 288 35" />
+                    <path id="irreg-label-left" d="M 58 175 L 36 78" />
+                    <path id="irreg-label-right" d="M 268 172 L 300 52" />
+                    <path id="irreg-label-diag" d="M 72 162 L 268 68" />
+                  </defs>
                   <polygon
                     points="60,170 250,170 280,55 40,80"
                     fill="#f5f5f5"
                     stroke="#111"
                     strokeWidth="2.5"
                   />
-                  {/* dashed diagonal front-left → back-right */}
+                  {/* dashed diagonal bottom-left → top-right */}
                   <line
                     x1="60"
                     y1="170"
@@ -1384,20 +1392,65 @@ export default function App() {
                     strokeWidth="1.75"
                     strokeDasharray="6 4"
                   />
-                  <text x="155" y="200" textAnchor="middle" fill="#24285e" fontSize="15" fontWeight="700" fontFamily="system-ui,sans-serif">
-                    Front
+                  <text
+                    fill="#24285e"
+                    fontSize="14"
+                    fontWeight="700"
+                    fontFamily="system-ui,sans-serif"
+                    textAnchor="middle"
+                    dominantBaseline="central"
+                  >
+                    <textPath href="#irreg-label-bottom" startOffset="50%">
+                      Bottom
+                    </textPath>
                   </text>
-                  <text x="155" y="42" textAnchor="middle" fill="#24285e" fontSize="15" fontWeight="700" fontFamily="system-ui,sans-serif">
-                    Back
+                  <text
+                    fill="#24285e"
+                    fontSize="14"
+                    fontWeight="700"
+                    fontFamily="system-ui,sans-serif"
+                    textAnchor="middle"
+                    dominantBaseline="central"
+                  >
+                    <textPath href="#irreg-label-top" startOffset="50%">
+                      Top
+                    </textPath>
                   </text>
-                  <text x="28" y="130" textAnchor="middle" fill="#24285e" fontSize="15" fontWeight="700" fontFamily="system-ui,sans-serif" transform="rotate(-75 28 130)">
-                    Left
+                  <text
+                    fill="#24285e"
+                    fontSize="14"
+                    fontWeight="700"
+                    fontFamily="system-ui,sans-serif"
+                    textAnchor="middle"
+                    dominantBaseline="central"
+                  >
+                    <textPath href="#irreg-label-left" startOffset="50%">
+                      Left
+                    </textPath>
                   </text>
-                  <text x="295" y="120" textAnchor="middle" fill="#24285e" fontSize="15" fontWeight="700" fontFamily="system-ui,sans-serif" transform="rotate(70 295 120)">
-                    Right
+                  <text
+                    fill="#24285e"
+                    fontSize="14"
+                    fontWeight="700"
+                    fontFamily="system-ui,sans-serif"
+                    textAnchor="middle"
+                    dominantBaseline="central"
+                  >
+                    <textPath href="#irreg-label-right" startOffset="50%">
+                      Right
+                    </textPath>
                   </text>
-                  <text x="185" y="100" textAnchor="middle" fill="#24285e" fontSize="13" fontWeight="600" fontFamily="system-ui,sans-serif">
-                    Diagonal
+                  <text
+                    fill="#24285e"
+                    fontSize="13"
+                    fontWeight="600"
+                    fontFamily="system-ui,sans-serif"
+                    textAnchor="middle"
+                    dominantBaseline="central"
+                  >
+                    <textPath href="#irreg-label-diag" startOffset="50%">
+                      Diagonal
+                    </textPath>
                   </text>
                 </svg>
               </figure>
@@ -1455,7 +1508,7 @@ export default function App() {
                   />
                 </label>
                 <label>
-                  Front ({unit}){seamAllowanceIn > 0 ? ' — finished' : ''}
+                  Bottom ({unit}){seamAllowanceIn > 0 ? ' — finished' : ''}
                   <SoftNumberInput
                     min={1}
                     step={1}
@@ -1481,7 +1534,7 @@ export default function App() {
                   />
                 </label>
                 <label>
-                  Back ({unit}){seamAllowanceIn > 0 ? ' — finished' : ''}
+                  Top ({unit}){seamAllowanceIn > 0 ? ' — finished' : ''}
                   <SoftNumberInput
                     min={1}
                     step={1}
@@ -1966,7 +2019,7 @@ export default function App() {
                       />
                     </label>
                     <label>
-                      Front ({unit}){seamAllowanceIn > 0 ? ' — finished' : ''}
+                      Bottom ({unit}){seamAllowanceIn > 0 ? ' — finished' : ''}
                       <SoftNumberInput
                         min={0.01}
                         step={1}
@@ -2006,7 +2059,7 @@ export default function App() {
                       />
                     </label>
                     <label>
-                      Back ({unit}){seamAllowanceIn > 0 ? ' — finished' : ''}
+                      Top ({unit}){seamAllowanceIn > 0 ? ' — finished' : ''}
                       <SoftNumberInput
                         min={0.01}
                         step={1}
