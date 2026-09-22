@@ -36,6 +36,7 @@ import {
 } from './lib/geometry'
 import { wrapSvgText } from './lib/wrapSvgText'
 import { exportNestingPdf } from './lib/exportPdf'
+import { panelAddBlockMessage } from './lib/panelAddGate'
 import { CalculatorNav, MobileMoreCalculators } from './CalculatorNav'
 import { SHOP } from './shopLinks'
 import './App.css'
@@ -527,12 +528,15 @@ export default function App() {
     const sizes = draftCutSizes()
     if (!sizes) return
     const { cutW: w, cutL: l } = sizes
-    if (draftKind === 'rect' && suggestSplit(w, l, fabricWidthIn, seamAllowanceIn)) {
-      setActionHint('Panel is too large for this bolt — split or resize before adding.')
-      return
-    }
-    if (w > fabricWidthIn + 1e-6 && l > fabricWidthIn + 1e-6) {
-      setActionHint('Panel is too large for this bolt — resize before adding.')
+    const block = panelAddBlockMessage(
+      draftKind === 'trap' ? 'trap' : 'rect',
+      w,
+      l,
+      fabricWidthIn,
+      seamAllowanceIn,
+    )
+    if (block) {
+      setActionHint(block)
       return
     }
     const trapCut = draftTrapCut()
