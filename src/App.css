@@ -42,8 +42,8 @@ body { margin: 0; background: var(--sr-bg); }
   align-items: center;
   justify-content: space-between;
   gap: 0.75rem 1.25rem;
-  padding: 0.5rem 0.9rem;
-  min-height: 56px;
+  padding: 0.7rem 0.9rem;
+  min-height: 60px;
   flex-wrap: nowrap;
 }
 .app-header-identity {
@@ -598,7 +598,7 @@ button.clear-all {
 @media (max-width: 960px) {
   .app-header-bar {
     gap: 0.55rem 0.85rem;
-    padding: 0.45rem 0.75rem;
+    padding: 0.65rem 0.75rem;
   }
   .yards-meta { display: none; }
   button.export-pdf {
@@ -660,8 +660,8 @@ button.clear-all {
     flex-wrap: wrap;
     align-items: center;
     gap: 0.45rem 0.65rem;
-    padding: 0.5rem 0.75rem;
-    min-height: 52px;
+    padding: 0.65rem 0.75rem;
+    min-height: 56px;
   }
   .brand-logo { height: 32px; }
   .brand-sub { display: none; }
@@ -758,7 +758,7 @@ button.clear-all {
     padding: 0.2rem 0.45rem;
   }
   .app-header-bar {
-    padding: 0.45rem 0.55rem;
+    padding: 0.6rem 0.55rem;
   }
   .yards-exact { font-size: 0.95rem; }
   .yards-order { font-size: 0.72rem; }
