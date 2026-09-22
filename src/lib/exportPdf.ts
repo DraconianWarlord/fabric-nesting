@@ -11,6 +11,8 @@ import {
   circleRadius,
   fromInches,
   isCircle,
+  isIrregular,
+  isPolyPanel,
   isTrap,
   panelFootprint,
   panelPolygon,
@@ -293,6 +295,14 @@ export function finishedSize(panel: Panel, seamAllowanceIn: number): { w: number
         : Math.max(0, panel.width - 2 * seamAllowanceIn)
     return { w: d, h: d }
   }
+  if (isIrregular(panel)) {
+    // AABB finished approx (table uses finishedIrregularSize for full side string).
+    if (seamAllowanceIn <= 0) return { w: panel.width, h: panel.length }
+    return {
+      w: Math.max(0, panel.width - 2 * seamAllowanceIn),
+      h: Math.max(0, panel.length - 2 * seamAllowanceIn),
+    }
+  }
   if (isTrap(panel)) {
     const top = panel.topWidth ?? panel.width
     const bot = panel.bottomWidth ?? panel.width
@@ -330,6 +340,22 @@ export function finishedTrapSize(
   }
 }
 
+/** Finished irregular side lengths for table display (L/F/R/B + diagonal). */
+export function finishedIrregularSize(
+  panel: Panel,
+  seamAllowanceIn: number,
+): { left: number; front: number; right: number; back: number; diagonal: number } {
+  const sub = (v: number) =>
+    seamAllowanceIn <= 0 ? v : Math.max(0, v - 2 * seamAllowanceIn)
+  return {
+    left: sub(panel.sideLeft ?? 0),
+    front: sub(panel.sideFront ?? 0),
+    right: sub(panel.sideRight ?? 0),
+    back: sub(panel.sideBack ?? 0),
+    diagonal: sub(panel.diagonal ?? 0),
+  }
+}
+
 /**
  * Dimension string for nest panel labels: cut size (includes seam allowance).
  * Panel width/length are cut dimensions. Includes unit abbr.
@@ -341,6 +367,14 @@ export function formatPanelNestDim(
 ): string {
   if (isCircle(panel)) {
     return `⌀ ${fmtDim(panel.width, unit)} ${unit}`
+  }
+  if (isIrregular(panel)) {
+    // Shorter nest label: L×F×R×B (omit diagonal to save space).
+    const L = panel.sideLeft ?? 0
+    const F = panel.sideFront ?? 0
+    const R = panel.sideRight ?? 0
+    const B = panel.sideBack ?? 0
+    return `${fmtDim(L, unit)}×${fmtDim(F, unit)}×${fmtDim(R, unit)}×${fmtDim(B, unit)} ${unit}`
   }
   if (isTrap(panel)) {
     const top = panel.topWidth ?? panel.width
@@ -518,8 +552,8 @@ export function drawNest(
       doc.clip()
       doc.circle(cx, cy, rPt, 'FD')
       doc.restoreGraphicsState()
-    } else if (isTrap(p)) {
-      // Clip cut polygon to this page's fabric Y slice (and bolt X) before PDF transform.
+    } else if (isPolyPanel(p)) {
+      // Trap / irregular: clip cut polygon to this page's fabric Y slice (and bolt X).
       // Without this, unclipped vertices map outside the bolt and draw huge skewed triangles.
       let poly = clipPolygonToYRange(panelPolygon(p), sliceStart, sliceEnd)
       poly = clipPolygonToXRange(poly, 0, fabricWidthIn)
@@ -718,6 +752,10 @@ export function exportNestingPdf(input: ExportPdfInput): string {
       const fin = finishedSize(p, seamAllowanceIn)
       finishedStr = `⌀ ${fmtDim(fin.w, u)} ${u}`
       cutStr = `⌀ ${fmtDim(p.width, u)} ${u}`
+    } else if (isIrregular(p)) {
+      const ir = finishedIrregularSize(p, seamAllowanceIn)
+      finishedStr = `${fmtDim(ir.left, u)}×${fmtDim(ir.front, u)}×${fmtDim(ir.right, u)}×${fmtDim(ir.back, u)} ⌒${fmtDim(ir.diagonal, u)} ${u}`
+      cutStr = `${fmtDim(p.sideLeft ?? 0, u)}×${fmtDim(p.sideFront ?? 0, u)}×${fmtDim(p.sideRight ?? 0, u)}×${fmtDim(p.sideBack ?? 0, u)} ⌒${fmtDim(p.diagonal ?? 0, u)} ${u}`
     } else if (isTrap(p)) {
       const t = finishedTrapSize(p, seamAllowanceIn)
       finishedStr = `${fmtDim(t.top, u)}/${fmtDim(t.bottom, u)} × ${fmtDim(t.height, u)} ${u}`

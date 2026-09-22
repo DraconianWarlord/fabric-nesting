@@ -27,3 +27,14 @@ Panels may be `kind: 'circle'`. Store cut diameter as `width = length = cutDiame
 circle–circle uses center distance; circle–rect uses closest-point-on-AABB;
 circle–trap uses a 32-gon via `panelPolygon` + SAT. Rotate/flip are no-ops (UI hides).
 `suggestSplit` is not used — oversized circles get `PANEL_TOO_LARGE_RESIZE`.
+
+
+## Irregular quads (MVP)
+
+Panels may be `kind: 'irregular'`. Defined by four finished side lengths (Left, Front,
+Right, Back) plus one diagonal (front-left → back-right). **Seam allowance:** each of
+the five finished lengths expands by 2×SA, then `quadPolygonFromSides` builds the cut
+polygon (AABB → `width`/`length`). Default diagonal follows fabric-calculator rules:
+symmetric/keystone when an opposite pair is equal; forepeak (right angle at front-left)
+when all four sides are unequal. Overlap uses convex polygon SAT like traps; rotate/flip
+OK; oversized → `PANEL_TOO_LARGE_RESIZE` (no split).

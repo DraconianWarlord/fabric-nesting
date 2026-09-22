@@ -15,8 +15,12 @@ import {
   flipV,
   fromInches,
   circleCutFromFinished,
+  defaultDiagonal,
+  irregularCutFromFinished,
   isCircle,
   isGenericLabel,
+  isIrregular,
+  isPolyPanel,
   isTrap,
   nextSequentialLabel,
   offBolt,
@@ -105,9 +109,11 @@ function panelSetIdentity(panels: Panel[]): string {
     .map((p) =>
       isCircle(p)
         ? `${p.id}:circle:${p.width}`
-        : isTrap(p)
-          ? `${p.id}:trap:${p.topWidth}x${p.bottomWidth}x${p.length}`
-          : `${p.id}:rect:${p.width}x${p.length}`,
+        : isIrregular(p)
+          ? `${p.id}:irregular:${p.sideLeft}x${p.sideFront}x${p.sideRight}x${p.sideBack}x${p.diagonal}`
+          : isTrap(p)
+            ? `${p.id}:trap:${p.topWidth}x${p.bottomWidth}x${p.length}`
+            : `${p.id}:rect:${p.width}x${p.length}`,
     )
     .join('|')
 }
@@ -280,6 +286,12 @@ export default function App() {
   const [draftBottom, setDraftBottom] = useState<number | ''>(18)
   const [draftHeight, setDraftHeight] = useState<number | ''>(20)
   const [draftDiameter, setDraftDiameter] = useState<number | ''>(12)
+  const [draftLeft, setDraftLeft] = useState<number | ''>(16)
+  const [draftFront, setDraftFront] = useState<number | ''>(20)
+  const [draftRight, setDraftRight] = useState<number | ''>(16)
+  const [draftBack, setDraftBack] = useState<number | ''>(24)
+  const [draftDiagonal, setDraftDiagonal] = useState<number | ''>(27.13)
+  const [diagonalDirty, setDiagonalDirty] = useState(false)
   const [fabricWidthDraft, setFabricWidthDraft] = useState<number | ''>(54)
   const [seamDraft, setSeamDraft] = useState<number | ''>(0.5)
   const [wasteDraft, setWasteDraft] = useState<number | ''>(0)
@@ -339,6 +351,26 @@ export default function App() {
   useEffect(() => {
     setVRepeatDraft(Number(fromInches(vRepeatIn, unit).toFixed(unit === 'in' ? 3 : 1)))
   }, [vRepeatIn, unit])
+
+  // Auto-fill diagonal from sides unless the user has manually overridden it.
+  useEffect(() => {
+    if (diagonalDirty) return
+    if (draftLeft === '' || draftFront === '' || draftRight === '' || draftBack === '') return
+    const L = Number(draftLeft)
+    const F = Number(draftFront)
+    const R = Number(draftRight)
+    const B = Number(draftBack)
+    if (!(L > 0) || !(F > 0) || !(R > 0) || !(B > 0)) return
+    const d = defaultDiagonal(
+      toInches(L, unit),
+      toInches(F, unit),
+      toInches(R, unit),
+      toInches(B, unit),
+    )
+    if (!(d > 0)) return
+    const displayD = Number(fromInches(d, unit).toFixed(unit === 'in' ? 2 : 1))
+    setDraftDiagonal(displayD)
+  }, [draftLeft, draftFront, draftRight, draftBack, diagonalDirty, unit])
 
   useEffect(() => {
     const el = canvasWrapRef.current
@@ -433,6 +465,16 @@ export default function App() {
         cutL: cut.diameter,
       }
     }
+    if (draftKind === 'irregular') {
+      const cut = draftIrregularCut()
+      if (!cut) return null
+      return {
+        finW: cut.width,
+        finL: cut.length,
+        cutW: cut.width,
+        cutL: cut.length,
+      }
+    }
     if (draftKind === 'trap') {
       if (draftTop === '' || draftBottom === '' || draftHeight === '') return null
       const finTop = toInches(Number(draftTop), unit)
@@ -477,16 +519,36 @@ export default function App() {
     return circleCutFromFinished(finD, seamAllowanceIn)
   }
 
+  function draftIrregularCut(): NonNullable<ReturnType<typeof irregularCutFromFinished>> | null {
+    if (draftKind !== 'irregular') return null
+    if (
+      draftLeft === '' ||
+      draftFront === '' ||
+      draftRight === '' ||
+      draftBack === '' ||
+      draftDiagonal === ''
+    ) {
+      return null
+    }
+    const finL = toInches(Number(draftLeft), unit)
+    const finF = toInches(Number(draftFront), unit)
+    const finR = toInches(Number(draftRight), unit)
+    const finB = toInches(Number(draftBack), unit)
+    const finD = toInches(Number(draftDiagonal), unit)
+    if (!(finL > 0) || !(finF > 0) || !(finR > 0) || !(finB > 0) || !(finD > 0)) return null
+    return irregularCutFromFinished(finL, finF, finR, finB, finD, seamAllowanceIn)
+  }
+
   const draftSplit = (() => {
     // Split helper is rect-oriented; traps/circles use resize-only messaging.
-    if (draftKind === 'trap' || draftKind === 'circle') return null
+    if (draftKind === 'trap' || draftKind === 'circle' || draftKind === 'irregular') return null
     const sizes = draftCutSizes()
     if (!sizes) return null
     return suggestSplit(sizes.cutW, sizes.cutL, fabricWidthIn, seamAllowanceIn)
   })()
 
   const selectedSplit =
-    selected && !isTrap(selected) && !isCircle(selected)
+    selected && !isTrap(selected) && !isCircle(selected) && !isIrregular(selected)
       ? suggestSplit(selected.width, selected.length, fabricWidthIn, seamAllowanceIn)
       : null
 
@@ -557,7 +619,13 @@ export default function App() {
     if (!sizes) return
     const { cutW: w, cutL: l } = sizes
     const block = panelAddBlockMessage(
-      draftKind === 'trap' ? 'trap' : draftKind === 'circle' ? 'circle' : 'rect',
+      draftKind === 'trap'
+        ? 'trap'
+        : draftKind === 'circle'
+          ? 'circle'
+          : draftKind === 'irregular'
+            ? 'irregular'
+            : 'rect',
       w,
       l,
       fabricWidthIn,
@@ -569,6 +637,7 @@ export default function App() {
     }
     const trapCut = draftTrapCut()
     const circleCut = draftCircleCut()
+    const irregularCut = draftIrregularCut()
     const qty =
       typeof draftQty === 'number' && draftQty > 0 ? Math.min(40, Math.floor(draftQty)) : 1
     const next = [...panels]
@@ -588,6 +657,25 @@ export default function App() {
           kind: 'circle',
           width: circleCut.diameter,
           length: circleCut.diameter,
+          x: 0,
+          y: 0,
+          rotation: 0,
+          flippedH: false,
+          flippedV: false,
+          color,
+        }
+      } else if (draftKind === 'irregular' && irregularCut) {
+        base = {
+          id: uid(),
+          label,
+          kind: 'irregular',
+          width: irregularCut.width,
+          length: irregularCut.length,
+          sideLeft: irregularCut.sideLeft,
+          sideFront: irregularCut.sideFront,
+          sideRight: irregularCut.sideRight,
+          sideBack: irregularCut.sideBack,
+          diagonal: irregularCut.diagonal,
           x: 0,
           y: 0,
           rotation: 0,
@@ -643,6 +731,11 @@ export default function App() {
       bottomWidth?: number
       height?: number
       diameter?: number
+      sideLeft?: number
+      sideFront?: number
+      sideRight?: number
+      sideBack?: number
+      diagonal?: number
     },
   ) {
     setPanels((prev) => {
@@ -662,6 +755,56 @@ export default function App() {
           kind: 'circle',
           width: cut.diameter,
           length: cut.diameter,
+        }
+      } else if (isIrregular(current)) {
+        const finLeft =
+          patch.sideLeft !== undefined
+            ? patch.sideLeft
+            : Math.max(0, (current.sideLeft ?? 0) - 2 * seamAllowanceIn)
+        const finFront =
+          patch.sideFront !== undefined
+            ? patch.sideFront
+            : Math.max(0, (current.sideFront ?? 0) - 2 * seamAllowanceIn)
+        const finRight =
+          patch.sideRight !== undefined
+            ? patch.sideRight
+            : Math.max(0, (current.sideRight ?? 0) - 2 * seamAllowanceIn)
+        const finBack =
+          patch.sideBack !== undefined
+            ? patch.sideBack
+            : Math.max(0, (current.sideBack ?? 0) - 2 * seamAllowanceIn)
+        const finDiag =
+          patch.diagonal !== undefined
+            ? patch.diagonal
+            : Math.max(0, (current.diagonal ?? 0) - 2 * seamAllowanceIn)
+        if (
+          !(finLeft > 0) ||
+          !(finFront > 0) ||
+          !(finRight > 0) ||
+          !(finBack > 0) ||
+          !(finDiag > 0)
+        ) {
+          return prev
+        }
+        const cut = irregularCutFromFinished(
+          finLeft,
+          finFront,
+          finRight,
+          finBack,
+          finDiag,
+          seamAllowanceIn,
+        )
+        if (!cut) return prev
+        next = {
+          ...current,
+          kind: 'irregular',
+          sideLeft: cut.sideLeft,
+          sideFront: cut.sideFront,
+          sideRight: cut.sideRight,
+          sideBack: cut.sideBack,
+          diagonal: cut.diagonal,
+          width: cut.width,
+          length: cut.length,
         }
       } else if (isTrap(current)) {
         const finTop =
@@ -1106,6 +1249,16 @@ export default function App() {
               >
                 Circle
               </button>
+              <button
+                type="button"
+                className={draftKind === 'irregular' ? 'active' : ''}
+                onClick={() => {
+                  setDraftKind('irregular')
+                  setDiagonalDirty(false)
+                }}
+              >
+                Irregular
+              </button>
             </div>
             {draftKind === 'circle' && (
               <figure className="circle-dims-figure" aria-label="Circle finished diameter">
@@ -1206,6 +1359,49 @@ export default function App() {
                 </svg>
               </figure>
             )}
+            {draftKind === 'irregular' && (
+              <figure className="irregular-dims-figure" aria-label="Irregular quadrilateral finished dimensions">
+                <svg
+                  className="irregular-dims-svg"
+                  viewBox="0 0 320 240"
+                  role="img"
+                  aria-hidden="true"
+                >
+                  <title>Left, Front, Right, Back, and Diagonal</title>
+                  <polygon
+                    points="60,170 250,170 280,55 40,80"
+                    fill="#f5f5f5"
+                    stroke="#111"
+                    strokeWidth="2.5"
+                  />
+                  {/* dashed diagonal front-left → back-right */}
+                  <line
+                    x1="60"
+                    y1="170"
+                    x2="280"
+                    y2="55"
+                    stroke="#24285e"
+                    strokeWidth="1.75"
+                    strokeDasharray="6 4"
+                  />
+                  <text x="155" y="200" textAnchor="middle" fill="#24285e" fontSize="15" fontWeight="700" fontFamily="system-ui,sans-serif">
+                    Front
+                  </text>
+                  <text x="155" y="42" textAnchor="middle" fill="#24285e" fontSize="15" fontWeight="700" fontFamily="system-ui,sans-serif">
+                    Back
+                  </text>
+                  <text x="28" y="130" textAnchor="middle" fill="#24285e" fontSize="15" fontWeight="700" fontFamily="system-ui,sans-serif" transform="rotate(-75 28 130)">
+                    Left
+                  </text>
+                  <text x="295" y="120" textAnchor="middle" fill="#24285e" fontSize="15" fontWeight="700" fontFamily="system-ui,sans-serif" transform="rotate(70 295 120)">
+                    Right
+                  </text>
+                  <text x="185" y="100" textAnchor="middle" fill="#24285e" fontSize="13" fontWeight="600" fontFamily="system-ui,sans-serif">
+                    Diagonal
+                  </text>
+                </svg>
+              </figure>
+            )}
             {draftKind === 'rect' ? (
               <>
                 <label>
@@ -1242,6 +1438,90 @@ export default function App() {
                   />
                 </label>
                 <p className="hint">Finished diameter only. Cut diameter = finished + 2×seam allowance.</p>
+              </>
+            ) : draftKind === 'irregular' ? (
+              <>
+                <label>
+                  Left ({unit}){seamAllowanceIn > 0 ? ' — finished' : ''}
+                  <SoftNumberInput
+                    min={1}
+                    step={1}
+                    inputMode="decimal"
+                    value={draftLeft}
+                    onValueChange={(v) => {
+                      setDraftLeft(v)
+                      setDiagonalDirty(false)
+                    }}
+                  />
+                </label>
+                <label>
+                  Front ({unit}){seamAllowanceIn > 0 ? ' — finished' : ''}
+                  <SoftNumberInput
+                    min={1}
+                    step={1}
+                    inputMode="decimal"
+                    value={draftFront}
+                    onValueChange={(v) => {
+                      setDraftFront(v)
+                      setDiagonalDirty(false)
+                    }}
+                  />
+                </label>
+                <label>
+                  Right ({unit}){seamAllowanceIn > 0 ? ' — finished' : ''}
+                  <SoftNumberInput
+                    min={1}
+                    step={1}
+                    inputMode="decimal"
+                    value={draftRight}
+                    onValueChange={(v) => {
+                      setDraftRight(v)
+                      setDiagonalDirty(false)
+                    }}
+                  />
+                </label>
+                <label>
+                  Back ({unit}){seamAllowanceIn > 0 ? ' — finished' : ''}
+                  <SoftNumberInput
+                    min={1}
+                    step={1}
+                    inputMode="decimal"
+                    value={draftBack}
+                    onValueChange={(v) => {
+                      setDraftBack(v)
+                      setDiagonalDirty(false)
+                    }}
+                  />
+                </label>
+                <label>
+                  Diagonal ({unit}){seamAllowanceIn > 0 ? ' — finished' : ''}
+                  <SoftNumberInput
+                    min={1}
+                    step={0.01}
+                    inputMode="decimal"
+                    value={draftDiagonal}
+                    onValueChange={(v) => {
+                      setDraftDiagonal(v)
+                      setDiagonalDirty(true)
+                    }}
+                  />
+                </label>
+                <p className="hint">
+                  Auto from sides (symmetric / forepeak / keystone). Edit to match a measured
+                  cross-corner.
+                  {diagonalDirty && (
+                    <>
+                      {' '}
+                      <button
+                        type="button"
+                        className="linkish"
+                        onClick={() => setDiagonalDirty(false)}
+                      >
+                        Reset diagonal
+                      </button>
+                    </>
+                  )}
+                </p>
               </>
             ) : (
               <>
@@ -1284,6 +1564,15 @@ export default function App() {
               <p className="hint">
                 {draftKind === 'circle' && draftCircleCut() ? (
                   <>Cut ≈ ⌀ {display(draftCircleCut()!.diameter)} {unit}</>
+                ) : draftKind === 'irregular' && draftIrregularCut() ? (
+                  <>
+                    Cut ≈ {display(draftIrregularCut()!.sideLeft)}×
+                    {display(draftIrregularCut()!.sideFront)}×
+                    {display(draftIrregularCut()!.sideRight)}×
+                    {display(draftIrregularCut()!.sideBack)} ⌒
+                    {display(draftIrregularCut()!.diagonal)} {unit} (AABB{' '}
+                    {display(draftIrregularCut()!.width)}×{display(draftIrregularCut()!.length)})
+                  </>
                 ) : draftKind === 'trap' && draftTrapCut() ? (
                   <>
                     Cut ≈ {display(draftTrapCut()!.topWidth)}/{display(draftTrapCut()!.bottomWidth)} ×{' '}
@@ -1354,7 +1643,14 @@ export default function App() {
                   ? draftW === '' || draftL === ''
                   : draftKind === 'circle'
                     ? draftDiameter === ''
-                    : draftTop === '' || draftBottom === '' || draftHeight === '')
+                    : draftKind === 'irregular'
+                      ? draftLeft === '' ||
+                        draftFront === '' ||
+                        draftRight === '' ||
+                        draftBack === '' ||
+                        draftDiagonal === '' ||
+                        !draftIrregularCut()
+                      : draftTop === '' || draftBottom === '' || draftHeight === '')
               }
             >
               Add to bolt
@@ -1453,7 +1749,7 @@ export default function App() {
               const bad = Boolean(prob?.overlap || prob?.off)
               const stroke = p.id === selectedId ? '#24285e' : bad ? '#e75053' : '#333'
               const strokeWidth = p.id === selectedId ? 3.5 : bad ? 2.75 : 1.75
-              const poly = isTrap(p) ? panelPolygon(p) : null
+              const poly = isPolyPanel(p) ? panelPolygon(p) : null
               const points = poly
                 ? poly.map((pt) => `${pt.x * pxPerIn},${pt.y * pxPerIn}`).join(' ')
                 : ''
@@ -1646,6 +1942,110 @@ export default function App() {
                       />
                     </label>
                   </>
+                ) : isIrregular(selected) ? (
+                  <>
+                    <p className="hint">Irregular quad (L / F / R / B + diagonal)</p>
+                    <label>
+                      Left ({unit}){seamAllowanceIn > 0 ? ' — finished' : ''}
+                      <SoftNumberInput
+                        min={0.01}
+                        step={1}
+                        inputMode="decimal"
+                        value={Number(
+                          fromInches(
+                            Math.max(0, (selected.sideLeft ?? 0) - 2 * seamAllowanceIn),
+                            unit,
+                          ).toFixed(unit === 'in' ? 2 : 1),
+                        )}
+                        onValueChange={(v) => {
+                          if (v === '' || !(v > 0)) return
+                          updateSelectedFinishedDims(selected.id, {
+                            sideLeft: toInches(v, unit),
+                          })
+                        }}
+                      />
+                    </label>
+                    <label>
+                      Front ({unit}){seamAllowanceIn > 0 ? ' — finished' : ''}
+                      <SoftNumberInput
+                        min={0.01}
+                        step={1}
+                        inputMode="decimal"
+                        value={Number(
+                          fromInches(
+                            Math.max(0, (selected.sideFront ?? 0) - 2 * seamAllowanceIn),
+                            unit,
+                          ).toFixed(unit === 'in' ? 2 : 1),
+                        )}
+                        onValueChange={(v) => {
+                          if (v === '' || !(v > 0)) return
+                          updateSelectedFinishedDims(selected.id, {
+                            sideFront: toInches(v, unit),
+                          })
+                        }}
+                      />
+                    </label>
+                    <label>
+                      Right ({unit}){seamAllowanceIn > 0 ? ' — finished' : ''}
+                      <SoftNumberInput
+                        min={0.01}
+                        step={1}
+                        inputMode="decimal"
+                        value={Number(
+                          fromInches(
+                            Math.max(0, (selected.sideRight ?? 0) - 2 * seamAllowanceIn),
+                            unit,
+                          ).toFixed(unit === 'in' ? 2 : 1),
+                        )}
+                        onValueChange={(v) => {
+                          if (v === '' || !(v > 0)) return
+                          updateSelectedFinishedDims(selected.id, {
+                            sideRight: toInches(v, unit),
+                          })
+                        }}
+                      />
+                    </label>
+                    <label>
+                      Back ({unit}){seamAllowanceIn > 0 ? ' — finished' : ''}
+                      <SoftNumberInput
+                        min={0.01}
+                        step={1}
+                        inputMode="decimal"
+                        value={Number(
+                          fromInches(
+                            Math.max(0, (selected.sideBack ?? 0) - 2 * seamAllowanceIn),
+                            unit,
+                          ).toFixed(unit === 'in' ? 2 : 1),
+                        )}
+                        onValueChange={(v) => {
+                          if (v === '' || !(v > 0)) return
+                          updateSelectedFinishedDims(selected.id, {
+                            sideBack: toInches(v, unit),
+                          })
+                        }}
+                      />
+                    </label>
+                    <label>
+                      Diagonal ({unit}){seamAllowanceIn > 0 ? ' — finished' : ''}
+                      <SoftNumberInput
+                        min={0.01}
+                        step={0.01}
+                        inputMode="decimal"
+                        value={Number(
+                          fromInches(
+                            Math.max(0, (selected.diagonal ?? 0) - 2 * seamAllowanceIn),
+                            unit,
+                          ).toFixed(unit === 'in' ? 2 : 1),
+                        )}
+                        onValueChange={(v) => {
+                          if (v === '' || !(v > 0)) return
+                          updateSelectedFinishedDims(selected.id, {
+                            diagonal: toInches(v, unit),
+                          })
+                        }}
+                      />
+                    </label>
+                  </>
                 ) : (
                   <>
                     <label>
@@ -1692,10 +2092,12 @@ export default function App() {
                 )}
                 <div className="row wrap">
                   {!isCircle(selected) && (
+                    <button type="button" onClick={() => rotateSelected90(selected.id)}>
+                      Rotate 90°
+                    </button>
+                  )}
+                  {isPolyPanel(selected) && (
                     <>
-                      <button type="button" onClick={() => rotateSelected90(selected.id)}>
-                        Rotate 90°
-                      </button>
                       <button type="button" onClick={() => updatePanelSafe(selected.id, flipH)}>
                         Flip H
                       </button>
@@ -1798,6 +2200,14 @@ export default function App() {
                         ? ` · finished ⌀ ${display(Math.max(0, selected.width - 2 * seamAllowanceIn))} ${unit}`
                         : ''}
                     </>
+                  ) : isIrregular(selected) ? (
+                    <>
+                      Cut {display(selected.sideLeft ?? 0)}×{display(selected.sideFront ?? 0)}×
+                      {display(selected.sideRight ?? 0)}×{display(selected.sideBack ?? 0)} ⌒
+                      {display(selected.diagonal ?? 0)} {unit}
+                      {' · '}AABB {display(panelFootprint(selected).w)} ×{' '}
+                      {display(panelFootprint(selected).h)} {unit}
+                    </>
                   ) : (
                     <>
                       Cut footprint {display(panelFootprint(selected).w)} ×{' '}
@@ -1845,9 +2255,11 @@ export default function App() {
                         <span className="list-dims">
                           {isCircle(p)
                             ? `⌀ ${display(p.width)} ${unit}`
-                            : isTrap(p)
-                              ? `${display(p.topWidth ?? p.width)}/${display(p.bottomWidth ?? p.width)} × ${display(p.length)} ${unit}`
-                              : `${display(fp.w)}×${display(fp.h)} ${unit}`}
+                            : isIrregular(p)
+                              ? `${display(p.sideLeft ?? 0)}×${display(p.sideFront ?? 0)}×${display(p.sideRight ?? 0)}×${display(p.sideBack ?? 0)} ⌒${display(p.diagonal ?? 0)} ${unit}`
+                              : isTrap(p)
+                                ? `${display(p.topWidth ?? p.width)}/${display(p.bottomWidth ?? p.width)} × ${display(p.length)} ${unit}`
+                                : `${display(fp.w)}×${display(fp.h)} ${unit}`}
                         </span>
                       </div>
                       <span className="list-flags">

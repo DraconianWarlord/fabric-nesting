@@ -9,6 +9,8 @@ import {
   trapCutFromFinished,
   tryRotate90,
   usedLengthInches,
+  irregularCutFromFinished,
+  defaultDiagonal,
   type Panel,
 } from './geometry'
 import {
@@ -273,5 +275,74 @@ describe('tall panel rotate 90°', () => {
     const rotated = tryRotate90(panel, [], BOLT)
     expect(rotated).toBeNull()
     expect(rotate90BlockMessage(false)).toBe(WONT_FIT_AT_90)
+  })
+})
+
+
+function irregularPanel(
+  id: string,
+  cut: NonNullable<ReturnType<typeof irregularCutFromFinished>>,
+): Panel {
+  return {
+    id,
+    label: id,
+    kind: 'irregular',
+    width: cut.width,
+    length: cut.length,
+    sideLeft: cut.sideLeft,
+    sideFront: cut.sideFront,
+    sideRight: cut.sideRight,
+    sideBack: cut.sideBack,
+    diagonal: cut.diagonal,
+    x: 0,
+    y: 0,
+    rotation: 0,
+    flippedH: false,
+    flippedV: false,
+    color: '#c45c26',
+  }
+}
+
+describe('extreme irregular sizes', () => {
+  describe('very small irregular', () => {
+    const finD = defaultDiagonal(0.5, 0.75, 0.5, 0.9)
+    const cut = irregularCutFromFinished(0.5, 0.75, 0.5, 0.9, finD, SA)!
+
+    it('expands all five lengths by 2×SA', () => {
+      expect(cut.sideLeft).toBeCloseTo(1.5, 6)
+      expect(cut.sideFront).toBeCloseTo(1.75, 6)
+      expect(cut.diagonal).toBeCloseTo(finD + 1, 6)
+    })
+
+    it('does not block add', () => {
+      expect(panelAddBlockMessage('irregular', cut.width, cut.length, BOLT, SA)).toBeNull()
+    })
+
+    it('fits and nests', () => {
+      const panel = irregularPanel('tiny-irr', cut)
+      expect(orientationsThatFit(panel, BOLT).length).toBeGreaterThan(0)
+      const nested = autoNestPanels([panel], BOLT)
+      expect(nested).toHaveLength(1)
+    })
+  })
+
+  describe('very large irregular', () => {
+    const finD = defaultDiagonal(80, 90, 80, 100)
+    const cut = irregularCutFromFinished(80, 90, 80, 100, finD, SA)!
+
+    it('AABB exceeds the bolt in both dims', () => {
+      expect(cut.width).toBeGreaterThan(BOLT)
+      expect(cut.length).toBeGreaterThan(BOLT)
+    })
+
+    it('blocks add with resize-only message (no split)', () => {
+      expect(panelAddBlockMessage('irregular', cut.width, cut.length, BOLT, SA)).toBe(
+        PANEL_TOO_LARGE_RESIZE,
+      )
+    })
+
+    it('fits no orientation', () => {
+      expect(orientationsThatFit(irregularPanel('huge-irr', cut), BOLT)).toEqual([])
+    })
   })
 })

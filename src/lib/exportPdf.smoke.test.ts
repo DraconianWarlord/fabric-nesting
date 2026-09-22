@@ -140,3 +140,34 @@ describe('exportNestingPdf smoke (must exercise full builder)', () => {
     ).not.toThrow()
   })
 
+  it('builds a PDF for irregular + pattern without throwing', () => {
+    expect(() =>
+      exportNestingPdf({
+        panels: [
+          rect({
+            id: 'irr1',
+            kind: 'irregular',
+            label: 'Irregular',
+            sideLeft: 12,
+            sideFront: 18,
+            sideRight: 14,
+            sideBack: 16,
+            diagonal: 20,
+            width: 18,
+            length: 14,
+            color: '#c45c26',
+          }),
+        ],
+        fabricWidthIn: 54,
+        seamAllowanceIn: 0.5,
+        waste: 0,
+        unit: 'in',
+        exact: 0.5,
+        order: 1,
+        patterned: true,
+        hRepeatIn: 4,
+        vRepeatIn: 4,
+      }),
+    ).not.toThrow()
+  })
+

@@ -856,6 +856,21 @@ button.clear-all {
   height: auto;
 }
 
+/* Irregular quad dimension diagram under shape toggle */
+.irregular-dims-figure {
+  margin: 0.5rem 0 0.65rem;
+  padding: 0.5rem;
+  background: #fff;
+  border: 1px solid var(--sr-border, #ddd);
+  border-radius: 8px;
+}
+.irregular-dims-svg {
+  display: block;
+  width: 100%;
+  min-height: 200px;
+  height: auto;
+}
+
 
 .bolt-mobile-bar {
   position: sticky;

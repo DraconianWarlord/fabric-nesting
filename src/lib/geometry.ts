@@ -21,7 +21,7 @@ export function cutSize(finished: number, seamAllowance: number): number {
   return finished + 2 * seamAllowance
 }
 
-export type PanelKind = 'rect' | 'trap' | 'circle'
+export type PanelKind = 'rect' | 'trap' | 'circle' | 'irregular'
 
 export interface Point {
   x: number
@@ -39,16 +39,29 @@ export interface Panel {
    *   unrotated AABB width = max(topWidth, bottomWidth).
    * - `'circle'`: circle from finished diameter; `width` = `length` = cut diameter.
    *   `topWidth` / `bottomWidth` unused. Rotation-invariant (footprint always square).
+   * - `'irregular'`: general quad from four side lengths + one diagonal (fabric-calculator
+   *   model). Stores cut `sideLeft`/`sideFront`/`sideRight`/`sideBack`/`diagonal`;
+   *   `width`/`length` are the unrotated AABB of the oriented cut polygon.
    */
   kind?: PanelKind
-  /** Unrotated cut width (across bolt when rotation=0). For traps: max(top,bottom). For circles: cut diameter. */
+  /** Unrotated cut width (across bolt when rotation=0). For traps: max(top,bottom). For circles: cut diameter. For irregular: AABB width. */
   width: number
-  /** Unrotated cut length (down bolt when rotation=0). For traps: cut height. For circles: cut diameter (= width). */
+  /** Unrotated cut length (down bolt when rotation=0). For traps: cut height. For circles: cut diameter (= width). For irregular: AABB height. */
   length: number
-  /** Trap only: cut top parallel-edge width (local y=0). Unused for circles. */
+  /** Trap only: cut top parallel-edge width (local y=0). Unused for circles/irregular. */
   topWidth?: number
-  /** Trap only: cut bottom parallel-edge width (local y=length). Unused for circles. */
+  /** Trap only: cut bottom parallel-edge width (local y=length). Unused for circles/irregular. */
   bottomWidth?: number
+  /** Irregular only: cut left edge length (front-left → back-left). */
+  sideLeft?: number
+  /** Irregular only: cut front edge length (front-left → front-right). */
+  sideFront?: number
+  /** Irregular only: cut right edge length (front-right → back-right). */
+  sideRight?: number
+  /** Irregular only: cut back edge length (back-right → back-left). */
+  sideBack?: number
+  /** Irregular only: cut diagonal front-left → back-right (left-bottom → top-right). */
+  diagonal?: number
   /** Top-left X on bolt (inches) — AABB of the oriented cut polygon */
   x: number
   /** Top-left Y on bolt (inches) — down the roll */
@@ -68,6 +81,16 @@ export function isTrap(p: Panel): boolean {
 /** True when panel is a circle (explicit kind). */
 export function isCircle(p: Panel): boolean {
   return p.kind === 'circle'
+}
+
+/** True when panel is an irregular quadrilateral (explicit kind). */
+export function isIrregular(p: Panel): boolean {
+  return p.kind === 'irregular'
+}
+
+/** Trap or irregular: convex cut polygon (SAT / clip path), not AABB-only. */
+export function isPolyPanel(p: Panel): boolean {
+  return isTrap(p) || isIrregular(p)
 }
 
 /** N-gon sides used when a circle needs a polygon (e.g. circle–trap overlap, PDF fallback). */
@@ -158,6 +181,286 @@ export function localTrapPolygon(p: Panel): Point[] {
   ]
 }
 
+/** Epsilon (inches) for opposite-side “equal” checks in defaultDiagonal. */
+export const IRREGULAR_SIDE_EPS = 1e-4
+
+function nearlyEqualSides(a: number, b: number, eps = IRREGULAR_SIDE_EPS): boolean {
+  return Math.abs(a - b) <= eps
+}
+
+function triangleInequality(a: number, b: number, c: number, eps = 1e-9): boolean {
+  return a + b >= c - eps && a + c >= b - eps && b + c >= a - eps && a > 0 && b > 0 && c > 0
+}
+
+/** Two-circle intersection. Returns 0–2 points, or null when coincident/invalid. */
+function circleCircleIntersect(
+  c0: Point,
+  r0: number,
+  c1: Point,
+  r1: number,
+): Point[] | null {
+  const dx = c1.x - c0.x
+  const dy = c1.y - c0.y
+  const d = Math.hypot(dx, dy)
+  if (!(r0 > 0) || !(r1 > 0) || d < 1e-12) return null
+  if (d > r0 + r1 + 1e-9 || d < Math.abs(r0 - r1) - 1e-9) return null
+  const a = (r0 * r0 - r1 * r1 + d * d) / (2 * d)
+  const h2 = r0 * r0 - a * a
+  if (h2 < -1e-9) return null
+  const h = Math.sqrt(Math.max(0, h2))
+  const xm = c0.x + (a * dx) / d
+  const ym = c0.y + (a * dy) / d
+  const rx = (-dy * h) / d
+  const ry = (dx * h) / d
+  if (h < 1e-12) return [{ x: xm, y: ym }]
+  return [
+    { x: xm + rx, y: ym + ry },
+    { x: xm - rx, y: ym - ry },
+  ]
+}
+
+function signedPolyArea(pts: Point[]): number {
+  let a = 0
+  for (let i = 0; i < pts.length; i++) {
+    const j = (i + 1) % pts.length
+    a += pts[i].x * pts[j].y - pts[j].x * pts[i].y
+  }
+  return a / 2
+}
+
+function segmentsProperIntersect(a: Point, b: Point, c: Point, d: Point, eps = 1e-9): boolean {
+  const cross = (o: Point, p: Point, q: Point) =>
+    (p.x - o.x) * (q.y - o.y) - (p.y - o.y) * (q.x - o.x)
+  const d1 = cross(a, b, c)
+  const d2 = cross(a, b, d)
+  const d3 = cross(c, d, a)
+  const d4 = cross(c, d, b)
+  if (((d1 > eps && d2 < -eps) || (d1 < -eps && d2 > eps)) &&
+      ((d3 > eps && d4 < -eps) || (d3 < -eps && d4 > eps))) {
+    return true
+  }
+  return false
+}
+
+function quadSelfIntersects(A: Point, B: Point, C: Point, D: Point): boolean {
+  return segmentsProperIntersect(A, B, C, D) || segmentsProperIntersect(B, C, D, A)
+}
+
+/**
+ * Default diagonal (finished or cut — same geometry) for irregular quads,
+ * matching fabric-calculator.com Fabric Nesting rules:
+ *
+ * a/c. **Symmetric / keystone**: if either opposite pair is equal (`left≈right`
+ *     OR `front≈back`), choose the diagonal that makes an isosceles-style quad
+ *     centering the shorter side of the unequal pair over the longer.
+ *     (Keystone = one opposite pair equal and the other unequal.)
+ * b. **Forepeak**: if left, front, right, back are all mutually unequal, default
+ *     so the front-left corner is a right angle (front ⊥ left); diagonal is then
+ *     |A→C| with D at (0,left) and C from right/back circle intersection.
+ *
+ * Uses IRREGULAR_SIDE_EPS for “equal”. Returns 0 when inputs are non-positive.
+ */
+export function defaultDiagonal(
+  left: number,
+  front: number,
+  right: number,
+  back: number,
+): number {
+  if (!(left > 0) || !(front > 0) || !(right > 0) || !(back > 0)) return 0
+
+  const oppLR = nearlyEqualSides(left, right)
+  const oppFB = nearlyEqualSides(front, back)
+
+  if (oppLR || oppFB) {
+    // Isosceles / keystone: center shorter base over longer; diagonal from mid-span.
+    if (oppLR) {
+      // Legs left≈right; bases front/back (may differ).
+      const inset = Math.abs(front - back) / 2
+      const leg = (left + right) / 2
+      const h2 = leg * leg - inset * inset
+      if (h2 < 0) return Math.hypot(front, left)
+      const h = Math.sqrt(h2)
+      return Math.hypot((front + back) / 2, h)
+    }
+    // Legs front≈back; bases left/right (may differ).
+    const inset = Math.abs(left - right) / 2
+    const leg = (front + back) / 2
+    const h2 = leg * leg - inset * inset
+    if (h2 < 0) return Math.hypot(front, left)
+    const h = Math.sqrt(h2)
+    return Math.hypot((left + right) / 2, h)
+  }
+
+  // Forepeak: right angle at front-left A between front (→B) and left (→D).
+  const A = { x: 0, y: 0 }
+  const B = { x: front, y: 0 }
+  const D = { x: 0, y: left }
+  const hits = circleCircleIntersect(B, right, D, back)
+  if (!hits || hits.length === 0) return Math.hypot(front, left)
+  // Prefer C in the first quadrant (convex quad with y≥0).
+  let best: Point | null = null
+  let bestScore = -Infinity
+  for (const C of hits) {
+    if (C.y < -1e-6) continue
+    const area = signedPolyArea([A, B, C, D])
+    const score = (C.x >= -1e-6 ? 1e6 : 0) + Math.abs(area)
+    if (score > bestScore) {
+      bestScore = score
+      best = C
+    }
+  }
+  const C = best ?? hits[0]
+  return Math.hypot(C.x - A.x, C.y - A.y)
+}
+
+/**
+ * Build a local cut quad from four side lengths + diagonal (front-left→back-right).
+ * Corners: A front-left, B front-right, C back-right, D back-left.
+ * Returns CCW polygon with AABB min at (0,0), or null if impossible / degenerate.
+ */
+export function quadPolygonFromSides(
+  left: number,
+  front: number,
+  right: number,
+  back: number,
+  diagonal: number,
+): Point[] | null {
+  if (
+    !(left > 0) ||
+    !(front > 0) ||
+    !(right > 0) ||
+    !(back > 0) ||
+    !(diagonal > 0)
+  ) {
+    return null
+  }
+  // Triangles formed by the diagonal: ABC (front, right, diag) and ADC (left, back, diag).
+  if (!triangleInequality(front, right, diagonal) || !triangleInequality(left, back, diagonal)) {
+    return null
+  }
+
+  const A: Point = { x: 0, y: 0 }
+  const B: Point = { x: front, y: 0 }
+
+  const cHits = circleCircleIntersect(A, diagonal, B, right)
+  if (!cHits || cHits.length === 0) return null
+  // Prefer C with y ≥ 0.
+  let C = cHits[0]
+  for (const cand of cHits) {
+    if (cand.y >= -1e-9 && (C.y < -1e-9 || cand.y >= C.y - 1e-12)) C = cand
+  }
+  if (C.y < -1e-6) return null
+
+  const dHits = circleCircleIntersect(A, left, C, back)
+  if (!dHits || dHits.length === 0) return null
+
+  let best: Point[] | null = null
+  let bestArea = 0
+  for (const D of dHits) {
+    if (!Number.isFinite(D.x) || !Number.isFinite(D.y)) continue
+    if (quadSelfIntersects(A, B, C, D)) continue
+    let pts = [A, B, C, D]
+    let area = signedPolyArea(pts)
+    if (area < -1e-8) {
+      pts = [A, D, C, B]
+      area = signedPolyArea(pts)
+    }
+    if (area <= 1e-8) continue
+    if (quadSelfIntersects(pts[0], pts[1], pts[2], pts[3])) continue
+    if (area > bestArea) {
+      bestArea = area
+      best = pts
+    }
+  }
+  if (!best) return null
+
+  // Translate so AABB min is (0,0).
+  let minX = Infinity
+  let minY = Infinity
+  let maxX = -Infinity
+  let maxY = -Infinity
+  for (const p of best) {
+    if (p.x < minX) minX = p.x
+    if (p.y < minY) minY = p.y
+    if (p.x > maxX) maxX = p.x
+    if (p.y > maxY) maxY = p.y
+  }
+  if (!(maxX - minX > 1e-9) || !(maxY - minY > 1e-9)) return null
+  const out = best.map((p) => ({ x: p.x - minX, y: p.y - minY }))
+  if (out.some((p) => !Number.isFinite(p.x) || !Number.isFinite(p.y))) return null
+  return out
+}
+
+/**
+ * Seam-allowance rule for irregular quads (MVP): expand each finished length by
+ * 2×SA (four sides + diagonal), same expand-each-dim rule as rect/trap. Then build
+ * the cut polygon from those lengths. Returns null if the cut quad is impossible.
+ */
+export function irregularCutFromFinished(
+  finLeft: number,
+  finFront: number,
+  finRight: number,
+  finBack: number,
+  finDiagonal: number,
+  seamAllowance: number,
+): {
+  sideLeft: number
+  sideFront: number
+  sideRight: number
+  sideBack: number
+  diagonal: number
+  width: number
+  length: number
+} | null {
+  const sa = Math.max(0, seamAllowance)
+  const sideLeft = finLeft + 2 * sa
+  const sideFront = finFront + 2 * sa
+  const sideRight = finRight + 2 * sa
+  const sideBack = finBack + 2 * sa
+  const diagonal = finDiagonal + 2 * sa
+  const poly = quadPolygonFromSides(sideLeft, sideFront, sideRight, sideBack, diagonal)
+  if (!poly) return null
+  let maxX = 0
+  let maxY = 0
+  for (const p of poly) {
+    if (p.x > maxX) maxX = p.x
+    if (p.y > maxY) maxY = p.y
+  }
+  return {
+    sideLeft,
+    sideFront,
+    sideRight,
+    sideBack,
+    diagonal,
+    width: maxX,
+    length: maxY,
+  }
+}
+
+/**
+ * Local cut irregular quad (unrotated, unflipped), AABB origin at (0,0).
+ * Falls back to the stored AABB rectangle if side data is missing/invalid.
+ */
+export function localIrregularPolygon(p: Panel): Point[] {
+  const left = p.sideLeft
+  const front = p.sideFront
+  const right = p.sideRight
+  const back = p.sideBack
+  const diag = p.diagonal
+  if (
+    left != null &&
+    front != null &&
+    right != null &&
+    back != null &&
+    diag != null
+  ) {
+    const poly = quadPolygonFromSides(left, front, right, back, diag)
+    if (poly) return poly
+  }
+  return localRectPolygon(p)
+}
+
+
 /** Local rectangle corners CCW from top-left. */
 export function localRectPolygon(p: Panel): Point[] {
   return [
@@ -199,9 +502,11 @@ function rotateCwNormalize(pts: Point[], rotation: 0 | 90 | 180 | 270): Point[] 
 export function panelPolygon(p: Panel): Point[] {
   const local = isCircle(p)
     ? localCirclePolygon(p)
-    : isTrap(p)
-      ? localTrapPolygon(p)
-      : localRectPolygon(p)
+    : isIrregular(p)
+      ? localIrregularPolygon(p)
+      : isTrap(p)
+        ? localTrapPolygon(p)
+        : localRectPolygon(p)
   const w = isTrap(p)
     ? Math.max(p.topWidth ?? 0, p.bottomWidth ?? 0, p.width)
     : p.width
@@ -270,6 +575,14 @@ export function panelDimLabel(p: Panel): string {
   if (isCircle(p)) {
     return `⌀${p.width}`
   }
+  if (isIrregular(p)) {
+    const L = p.sideLeft ?? 0
+    const F = p.sideFront ?? 0
+    const R = p.sideRight ?? 0
+    const B = p.sideBack ?? 0
+    const d = p.diagonal ?? 0
+    return `${L}×${F}×${R}×${B} ⌒${d}`
+  }
   if (isTrap(p)) {
     const top = p.topWidth ?? p.width
     const bot = p.bottomWidth ?? p.width
@@ -284,7 +597,7 @@ export function panelFootprint(p: Panel): { w: number; h: number } {
     const d = p.width
     return { w: d, h: d }
   }
-  if (isTrap(p)) {
+  if (isPolyPanel(p)) {
     // Oriented AABB from the cut polygon (handles flip + rotation).
     const b = polygonAabb(panelPolygon({ ...p, x: 0, y: 0 }))
     return { w: b.x2 - b.x1, h: b.y2 - b.y1 }
@@ -294,7 +607,7 @@ export function panelFootprint(p: Panel): { w: number; h: number } {
 }
 
 export function panelBounds(p: Panel): { x1: number; y1: number; x2: number; y2: number } {
-  if (isTrap(p)) {
+  if (isPolyPanel(p)) {
     return polygonAabb(panelPolygon(p))
   }
   const { w, h } = panelFootprint(p)
@@ -353,8 +666,8 @@ export function circleOverlapsCircle(a: Panel, b: Panel, eps = 1e-6): boolean {
  * Overlap dispatch (MVP):
  * - circle–circle: true circle math (center distance)
  * - circle–rect (axis-aligned footprint): closest-point-on-AABB
- * - circle–trap: N-gon approximation via polygonsOverlap(panelPolygon(circle), trapPoly)
- * - trap–*: convex SAT; rect–rect: AABB
+ * - circle–trap/irregular: N-gon / poly via polygonsOverlap(panelPolygon(circle), poly)
+ * - trap/irregular–*: convex SAT; rect–rect: AABB
  */
 export function overlapsAny(panel: Panel, others: Panel[]): boolean {
   const aBounds = panelBounds(panel)
@@ -366,20 +679,20 @@ export function overlapsAny(panel: Panel, others: Panel[]): boolean {
     const aCirc = isCircle(panel)
     const bCirc = isCircle(o)
     if (aCirc && bCirc) return circleOverlapsCircle(panel, o)
-    if (aCirc && isTrap(o)) return polygonsOverlap(panelPolygon(panel), panelPolygon(o))
-    if (bCirc && isTrap(panel)) return polygonsOverlap(panelPolygon(panel), panelPolygon(o))
+    if (aCirc && isPolyPanel(o)) return polygonsOverlap(panelPolygon(panel), panelPolygon(o))
+    if (bCirc && isPolyPanel(panel)) return polygonsOverlap(panelPolygon(panel), panelPolygon(o))
     if (aCirc) return circleOverlapsAabb(panel, panelBounds(o))
     if (bCirc) return circleOverlapsAabb(o, panelBounds(panel))
 
     // Two axis-aligned rects: AABB is exact
-    if (!isTrap(panel) && !isTrap(o)) return true
-    // Trap involved: convex polygon SAT
+    if (!isPolyPanel(panel) && !isPolyPanel(o)) return true
+    // Trap / irregular involved: convex polygon SAT
     return polygonsOverlap(panelPolygon(panel), panelPolygon(o))
   })
 }
 
 export function offBolt(panel: Panel, fabricWidth: number, eps = 1e-6): boolean {
-  if (isTrap(panel)) {
+  if (isPolyPanel(panel)) {
     const poly = panelPolygon(panel)
     for (const pt of poly) {
       if (pt.x < -eps || pt.x > fabricWidth + eps || pt.y < -eps) return true
@@ -435,11 +748,17 @@ function acrossCount(fpW: number, fabricWidth: number, gap: number): number {
   return Math.floor((fabricWidth + gap) / (fpW + gap))
 }
 
-function makeProbe(width: number, length: number, x: number, y: number): Panel {
+function makeProbe(
+  width: number,
+  length: number,
+  x: number,
+  y: number,
+  kind: PanelKind = 'rect',
+): Panel {
   return {
     id: '__probe__',
     label: '',
-    kind: 'rect',
+    kind,
     width,
     length,
     x,
@@ -448,6 +767,43 @@ function makeProbe(width: number, length: number, x: number, y: number): Panel {
     flippedH: false,
     flippedV: false,
     color: '',
+  }
+}
+
+/** Extra top-left candidates so circles can nest into valleys (AABB-edge BLF alone packs like squares). */
+function circleNestCandidates(
+  diameter: number,
+  fabricWidth: number,
+  existing: Panel[],
+  gap: number,
+): { xs: number[]; ys: number[] } {
+  const rNew = diameter / 2
+  const xs = new Set<number>([0, Math.max(0, fabricWidth - diameter)])
+  const ys = new Set<number>([0])
+  // Hex-ish angles: cardinal + 60° so circles tuck into gaps when AABBs would overlap.
+  const angles = [0, Math.PI / 3, Math.PI / 2, (2 * Math.PI) / 3, Math.PI, (4 * Math.PI) / 3, (3 * Math.PI) / 2, (5 * Math.PI) / 3]
+  for (const p of existing) {
+    const b = panelBounds(p)
+    xs.add(b.x1)
+    xs.add(b.x2 + gap)
+    ys.add(b.y1)
+    ys.add(b.y2 + gap)
+    if (!isCircle(p)) continue
+    const rOld = circleRadius(p)
+    const sep = rNew + rOld + gap
+    const c = circleCenter(p)
+    for (const a of angles) {
+      const cx = c.x + sep * Math.cos(a)
+      const cy = c.y + sep * Math.sin(a)
+      const x = cx - rNew
+      const y = cy - rNew
+      if (x >= -1e-9 && x + diameter <= fabricWidth + 1e-6) xs.add(x)
+      if (y >= -1e-9) ys.add(y)
+    }
+  }
+  return {
+    xs: [...xs].filter((x) => x >= -1e-9).sort((a, b) => a - b),
+    ys: [...ys].filter((y) => y >= -1e-9).sort((a, b) => a - b),
   }
 }
 
@@ -582,18 +938,27 @@ export function findBestSpot(
   fabricWidth: number,
   existing: Panel[],
   gap = 0.25,
+  kind: PanelKind = 'rect',
 ): { x: number; y: number } {
-  const xs = new Set<number>([0, Math.max(0, fabricWidth - width)])
-  const ys = new Set<number>([0])
-  for (const p of existing) {
-    const b = panelBounds(p)
-    xs.add(b.x1)
-    xs.add(b.x2 + gap)
-    ys.add(b.y1)
-    ys.add(b.y2 + gap)
+  let xCands: number[]
+  let yCands: number[]
+  if (kind === 'circle') {
+    const c = circleNestCandidates(width, fabricWidth, existing, gap)
+    xCands = c.xs
+    yCands = c.ys
+  } else {
+    const xs = new Set<number>([0, Math.max(0, fabricWidth - width)])
+    const ys = new Set<number>([0])
+    for (const p of existing) {
+      const b = panelBounds(p)
+      xs.add(b.x1)
+      xs.add(b.x2 + gap)
+      ys.add(b.y1)
+      ys.add(b.y2 + gap)
+    }
+    xCands = [...xs].filter((x) => x >= -1e-9).sort((a, b) => a - b)
+    yCands = [...ys].filter((y) => y >= -1e-9).sort((a, b) => a - b)
   }
-  const xCands = [...xs].filter((x) => x >= -1e-9).sort((a, b) => a - b)
-  const yCands = [...ys].filter((y) => y >= -1e-9).sort((a, b) => a - b)
 
   let best: { x: number; y: number } | null = null
   let bestYh = Infinity
@@ -604,7 +969,7 @@ export function findBestSpot(
     for (const x of xCands) {
       if (x < -1e-9 || x + width > fabricWidth + 1e-6) continue
       if (y < -1e-9) continue
-      const probe = makeProbe(width, length, x, y)
+      const probe = makeProbe(width, length, x, y, kind)
       if (overlapsAny(probe, existing)) continue
       const yh = y + length
       const better =
@@ -640,9 +1005,10 @@ export function findBestSpotOnPattern(
   hRepeat: number,
   vRepeat: number,
   gap = 0.25,
+  kind: PanelKind = 'rect',
 ): { x: number; y: number } {
   if (!patternEnabled(hRepeat, vRepeat)) {
-    return findBestSpot(width, length, fabricWidth, existing, gap)
+    return findBestSpot(width, length, fabricWidth, existing, gap, kind)
   }
 
   const hasH = hasHRepeat(hRepeat)
@@ -701,7 +1067,7 @@ export function findBestSpotOnPattern(
     for (const x of xCands) {
       if (x < -1e-9 || x + width > fabricWidth + 1e-6) continue
       if (y < -1e-9) continue
-      const probe = makeProbe(width, length, x, y)
+      const probe = makeProbe(width, length, x, y, kind)
       if (overlapsAny(probe, existing)) continue
       const yh = y + length
       const better =
@@ -718,7 +1084,7 @@ export function findBestSpotOnPattern(
   }
 
   if (best) return best
-  return findBestSpot(width, length, fabricWidth, existing, gap)
+  return findBestSpot(width, length, fabricWidth, existing, gap, kind)
 }
 
 /** Route to pattern-aware or normal placement. */
@@ -730,11 +1096,12 @@ export function placeSpot(
   gap = 0.25,
   hRepeat = 0,
   vRepeat = 0,
+  kind: PanelKind = 'rect',
 ): { x: number; y: number } {
   if (patternEnabled(hRepeat, vRepeat)) {
-    return findBestSpotOnPattern(width, length, fabricWidth, existing, hRepeat, vRepeat, gap)
+    return findBestSpotOnPattern(width, length, fabricWidth, existing, hRepeat, vRepeat, gap, kind)
   }
-  return findBestSpot(width, length, fabricWidth, existing, gap)
+  return findBestSpot(width, length, fabricWidth, existing, gap, kind)
 }
 
 /** Thin wrapper — prefer findBestSpot for new call sites. */
@@ -826,7 +1193,8 @@ function placeAtOrientation(
 ): Panel {
   const oriented: Panel = { ...panel, rotation, x: 0, y: 0 }
   const fp = panelFootprint(oriented)
-  const spot = placeSpot(fp.w, fp.h, fabricWidth, placed, gap, hRepeat, vRepeat)
+  const kind: PanelKind = panel.kind ?? 'rect'
+  const spot = placeSpot(fp.w, fp.h, fabricWidth, placed, gap, hRepeat, vRepeat, kind)
   return { ...panel, rotation, x: spot.x, y: spot.y }
 }
 

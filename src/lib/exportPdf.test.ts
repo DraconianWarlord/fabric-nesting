@@ -468,3 +468,27 @@ describe('formatPanelNestDim circle', () => {
     expect(formatPanelNestDim(circle, 'in', 0.5)).toBe('⌀ 14 in')
   })
 })
+
+describe('formatPanelNestDim irregular', () => {
+  it('shows L×F×R×B cut dims (short nest label)', () => {
+    const irreg = {
+      id: '1',
+      label: 'I',
+      kind: 'irregular' as const,
+      width: 24,
+      length: 16,
+      sideLeft: 12,
+      sideFront: 18,
+      sideRight: 14,
+      sideBack: 16,
+      diagonal: 20,
+      x: 0,
+      y: 0,
+      rotation: 0 as const,
+      flippedH: false,
+      flippedV: false,
+      color: '#24285e',
+    }
+    expect(formatPanelNestDim(irreg, 'in', 0.5)).toBe('12×18×14×16 in')
+  })
+})

@@ -17,6 +17,7 @@ import {
   exactYards,
   findBestSpotOnPattern,
   findOpenSpot,
+  findBestSpot,
   isGenericLabel,
   nextSequentialLabel,
   offBolt,
@@ -38,6 +39,10 @@ import {
   trapCutFromFinished,
   panelPolygon,
   panelDimLabel,
+  defaultDiagonal,
+  irregularCutFromFinished,
+  quadPolygonFromSides,
+  isIrregular,
   type Panel,
 } from './geometry'
 
@@ -827,5 +832,287 @@ describe('circle geometry', () => {
     expect(
       aabbOverlap(panelBounds(circle), panelBounds(corner)),
     ).toBe(true)
+  })
+})
+
+
+describe('irregular quadrilateral geometry', () => {
+  function irreg(
+    partial: Partial<Panel> & {
+      id: string
+      sideLeft: number
+      sideFront: number
+      sideRight: number
+      sideBack: number
+      diagonal: number
+      x: number
+      y: number
+    },
+  ): Panel {
+    const poly = quadPolygonFromSides(
+      partial.sideLeft,
+      partial.sideFront,
+      partial.sideRight,
+      partial.sideBack,
+      partial.diagonal,
+    )!
+    let maxX = 0
+    let maxY = 0
+    for (const pt of poly) {
+      if (pt.x > maxX) maxX = pt.x
+      if (pt.y > maxY) maxY = pt.y
+    }
+    return {
+      id: partial.id,
+      label: partial.label ?? partial.id,
+      kind: 'irregular',
+      width: maxX,
+      length: maxY,
+      sideLeft: partial.sideLeft,
+      sideFront: partial.sideFront,
+      sideRight: partial.sideRight,
+      sideBack: partial.sideBack,
+      diagonal: partial.diagonal,
+      x: partial.x,
+      y: partial.y,
+      rotation: partial.rotation ?? 0,
+      flippedH: partial.flippedH ?? false,
+      flippedV: partial.flippedV ?? false,
+      color: '#000',
+    }
+  }
+
+  describe('defaultDiagonal', () => {
+    it('symmetric / rectangle when both opposite pairs equal', () => {
+      // 10×20 rectangle → diag = sqrt(10²+20²)
+      expect(defaultDiagonal(10, 20, 10, 20)).toBeCloseTo(Math.hypot(20, 10), 6)
+    })
+
+    it('keystone / isosceles when left≈right and front≠back (centers shorter over longer)', () => {
+      const left = 16
+      const right = 16
+      const front = 20
+      const back = 24
+      const inset = Math.abs(front - back) / 2
+      const h = Math.sqrt(left * left - inset * inset)
+      const expected = Math.hypot((front + back) / 2, h)
+      expect(defaultDiagonal(left, front, right, back)).toBeCloseTo(expected, 6)
+    })
+
+    it('keystone when front≈back and left≠right', () => {
+      const front = 18
+      const back = 18
+      const left = 12
+      const right = 20
+      const inset = Math.abs(left - right) / 2
+      const h = Math.sqrt(front * front - inset * inset)
+      const expected = Math.hypot((left + right) / 2, h)
+      expect(defaultDiagonal(left, front, right, back)).toBeCloseTo(expected, 6)
+    })
+
+    it('forepeak: all unequal → right angle at front-left', () => {
+      const left = 10
+      const front = 12
+      const right = 14
+      const back = 16
+      const d = defaultDiagonal(left, front, right, back)
+      const poly = quadPolygonFromSides(left, front, right, back, d)
+      expect(poly).not.toBeNull()
+      // After AABB translate, find front-left (start of front edge along bottom-ish).
+      // Reconstruct untranslated: A at origin before translate — check angle via sides.
+      // With forepeak construction, vectors AB=(front,0) and AD should be perpendicular.
+      // Rebuild A,B,D,C from known construction:
+      // A=(0,0), B=(front,0), D=(0,left); C from circles; diagonal = |AC|
+      expect(d).toBeGreaterThan(0)
+      // Right angle: for poly built with this diagonal, front-left corner angle ≈ 90°.
+      // Local construction puts A at (0,0) before translate; after translate the corner
+      // that was A is at (-minX, -minY). Dot product of edges from A should be ~0.
+      const A = { x: 0, y: 0 }
+      const B = { x: front, y: 0 }
+      // Find C on circle(A,d) ∩ circle(B,right) with y≥0
+      // Use the polygon: sides from first vertex matching front length.
+      const pts = poly!
+      // Identify A as the vertex where adjacent edges ≈ front and left.
+      let found = false
+      for (let i = 0; i < 4; i++) {
+        const prev = pts[(i + 3) % 4]
+        const cur = pts[i]
+        const next = pts[(i + 1) % 4]
+        const lenPrev = Math.hypot(cur.x - prev.x, cur.y - prev.y)
+        const lenNext = Math.hypot(next.x - cur.x, next.y - cur.y)
+        const isLeftFront =
+          (Math.abs(lenPrev - left) < 1e-3 && Math.abs(lenNext - front) < 1e-3) ||
+          (Math.abs(lenPrev - front) < 1e-3 && Math.abs(lenNext - left) < 1e-3)
+        if (!isLeftFront) continue
+        const v1x = prev.x - cur.x
+        const v1y = prev.y - cur.y
+        const v2x = next.x - cur.x
+        const v2y = next.y - cur.y
+        const dot = v1x * v2x + v1y * v2y
+        expect(Math.abs(dot)).toBeLessThan(1e-4)
+        found = true
+        break
+      }
+      expect(found).toBe(true)
+      void A
+      void B
+    })
+  })
+
+  describe('quadPolygonFromSides', () => {
+    it('builds a rectangle when sides + default diagonal match', () => {
+      const d = defaultDiagonal(10, 20, 10, 20)
+      const poly = quadPolygonFromSides(10, 20, 10, 20, d)
+      expect(poly).not.toBeNull()
+      expect(poly!).toHaveLength(4)
+      // AABB should be 20 × 10
+      let maxX = 0
+      let maxY = 0
+      for (const pt of poly!) {
+        maxX = Math.max(maxX, pt.x)
+        maxY = Math.max(maxY, pt.y)
+      }
+      expect(maxX).toBeCloseTo(20, 5)
+      expect(maxY).toBeCloseTo(10, 5)
+    })
+
+    it('builds an isosceles trap-like keystone', () => {
+      const d = defaultDiagonal(16, 20, 16, 24)
+      const poly = quadPolygonFromSides(16, 20, 16, 24, d)
+      expect(poly).not.toBeNull()
+      expect(poly!).toHaveLength(4)
+    })
+
+    it('builds a forepeak quad', () => {
+      const d = defaultDiagonal(10, 12, 14, 16)
+      const poly = quadPolygonFromSides(10, 12, 14, 16, d)
+      expect(poly).not.toBeNull()
+    })
+
+    it('rejects impossible diagonal (triangle inequality)', () => {
+      expect(quadPolygonFromSides(10, 20, 10, 20, 100)).toBeNull()
+      expect(quadPolygonFromSides(10, 20, 10, 20, 1)).toBeNull()
+    })
+  })
+
+  it('irregularCutFromFinished expands all five lengths by 2×SA', () => {
+    const finD = defaultDiagonal(12, 18, 14, 16)
+    const cut = irregularCutFromFinished(12, 18, 14, 16, finD, 0.5)
+    expect(cut).not.toBeNull()
+    expect(cut!.sideLeft).toBeCloseTo(13, 6)
+    expect(cut!.sideFront).toBeCloseTo(19, 6)
+    expect(cut!.sideRight).toBeCloseTo(15, 6)
+    expect(cut!.sideBack).toBeCloseTo(17, 6)
+    expect(cut!.diagonal).toBeCloseTo(finD + 1, 6)
+    expect(cut!.width).toBeGreaterThan(0)
+    expect(cut!.length).toBeGreaterThan(0)
+  })
+
+  it('panelDimLabel shows L×F×R×B ⌒diag', () => {
+    const panel = irreg({
+      id: 'i',
+      sideLeft: 12,
+      sideFront: 18,
+      sideRight: 14,
+      sideBack: 16,
+      diagonal: 20,
+      x: 0,
+      y: 0,
+    })
+    expect(isIrregular(panel)).toBe(true)
+    expect(panelDimLabel(panel)).toBe('12×18×14×16 ⌒20')
+  })
+
+  it('orientationsThatFit returns 0 and 90 when AABB fits', () => {
+    const panel = irreg({
+      id: 'i',
+      sideLeft: 10,
+      sideFront: 20,
+      sideRight: 10,
+      sideBack: 20,
+      diagonal: Math.hypot(20, 10),
+      x: 0,
+      y: 0,
+    })
+    expect(orientationsThatFit(panel, 54)).toEqual([0, 90])
+  })
+
+  it('canPlace: irregular uses polygon SAT vs rect', () => {
+    const a = irreg({
+      id: 'a',
+      sideLeft: 10,
+      sideFront: 20,
+      sideRight: 10,
+      sideBack: 20,
+      diagonal: Math.hypot(20, 10),
+      x: 0,
+      y: 0,
+    })
+    const overlapping = p({ id: 'r', width: 10, length: 10, x: 5, y: 0 })
+    expect(canPlace(overlapping, [a], 54)).toBe(false)
+    const beside = p({ id: 'r2', width: 10, length: 10, x: 21, y: 0 })
+    expect(canPlace(beside, [a], 54)).toBe(true)
+  })
+
+  it('rotate90 swaps footprint for irregular', () => {
+    const panel = irreg({
+      id: 'i',
+      sideLeft: 10,
+      sideFront: 20,
+      sideRight: 10,
+      sideBack: 20,
+      diagonal: Math.hypot(20, 10),
+      x: 0,
+      y: 0,
+    })
+    const fp0 = panelFootprint(panel)
+    const rotated = rotate90(panel)
+    const fp90 = panelFootprint(rotated)
+    expect(fp90.w).toBeCloseTo(fp0.h, 5)
+    expect(fp90.h).toBeCloseTo(fp0.w, 5)
+  })
+})
+
+
+describe("circle nesting (true circle packing)", () => {
+  function circleAt(id: string, d: number, x = 0, y = 0): Panel {
+    return {
+      id,
+      label: id,
+      kind: "circle",
+      width: d,
+      length: d,
+      x,
+      y,
+      rotation: 0,
+      flippedH: false,
+      flippedV: false,
+      color: "#000",
+    }
+  }
+
+  it("findBestSpot with kind circle allows AABB-overlapping nest beside another circle", () => {
+    const d = 10
+    const first = circleAt("a", d, 0, 0)
+    // Square BLF would put next at x=10+gap. Circle packing can place center at ~d (touching).
+    const spot = findBestSpot(d, d, 30, [first], 0, "circle")
+    const probe = { ...first, id: "b", x: spot.x, y: spot.y }
+    const dist = Math.hypot(
+      circleCenter(probe).x - circleCenter(first).x,
+      circleCenter(probe).y - circleCenter(first).y,
+    )
+    expect(dist).toBeGreaterThanOrEqual(d - 1e-6)
+    // Tighter than pure AABB stack when second tucks diagonally, or equal when side-by-side.
+    expect(spot.x + d).toBeLessThanOrEqual(30 + 1e-6)
+  })
+
+  it("autoNest packs three equal circles shorter than square-row+row when bolt is 2 diameters wide", () => {
+    const d = 10
+    const fabricW = 20
+    const panels = [circleAt("a", d), circleAt("b", d), circleAt("c", d)]
+    const nested = autoNestPanels(panels, fabricW, 0)
+    const used = usedLengthInches(nested)
+    // Square packing: 2 on row1 + 1 on row2 => used ≈ 20. Hex valley: used ≈ 10 + 5√3 ≈ 18.66
+    expect(used).toBeLessThan(20 - 0.1)
   })
 })
