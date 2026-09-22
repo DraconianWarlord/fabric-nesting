@@ -264,6 +264,9 @@ export default function App() {
   const [openList, setOpenList] = useState(true)
   /** Narrow-screen segmented view: Controls | Bolt | Panels */
   const [mobileView, setMobileView] = useState<'controls' | 'bolt' | 'panels'>('bolt')
+  const [isNarrow, setIsNarrow] = useState(() =>
+    typeof window !== 'undefined' && window.matchMedia('(max-width: 800px)').matches,
+  )
   const dragRef = useRef<{
     id: string
     ox: number
@@ -617,6 +620,14 @@ export default function App() {
     })
   }
 
+
+  useEffect(() => {
+    const mq = window.matchMedia('(max-width: 800px)')
+    const sync = () => setIsNarrow(mq.matches)
+    sync()
+    mq.addEventListener('change', sync)
+    return () => mq.removeEventListener('change', sync)
+  }, [])
   function runAutoNest() {
     if (panels.length === 0) return
     const candidates = autoNestCandidates(panels, fabricWidthIn, 0.25, effectiveH, effectiveV)
@@ -642,6 +653,8 @@ export default function App() {
     if (!panel) return
     e.stopPropagation()
     setSelectedId(id)
+    // Phones: tap to select only — no drag (Auto-Nest is the layout control).
+    if (isNarrow || e.pointerType === 'touch') return
     const svg = (e.target as Element).closest('svg') as SVGSVGElement
     const pt = clientToSvg(svg, e.clientX, e.clientY)
     dragRef.current = {
@@ -1232,15 +1245,29 @@ export default function App() {
         </aside>
 
         <main className="canvas-wrap" ref={canvasWrapRef} data-mobile-pane="bolt">
+          {isNarrow && (
+            <div className="bolt-mobile-bar">
+              <button
+                type="button"
+                className="primary auto-nest"
+                title="Cycle through ranked nest layouts"
+                onClick={runAutoNest}
+                disabled={panels.length === 0}
+              >
+                Auto-Nest
+              </button>
+              {nestHint && <p className="hint nest-hint">{nestHint}</p>}
+            </div>
+          )}
           <svg
             width={svgW}
             height={svgH}
             viewBox={`0 0 ${svgW} ${svgH}`}
             className="bolt"
-            style={{ touchAction: 'none' }}
-            onPointerMove={onPointerMove}
-            onPointerUp={onPointerUp}
-            onPointerLeave={onPointerUp}
+            style={{ touchAction: isNarrow ? 'auto' : 'none' }}
+            onPointerMove={isNarrow ? undefined : onPointerMove}
+            onPointerUp={isNarrow ? undefined : onPointerUp}
+            onPointerLeave={isNarrow ? undefined : onPointerUp}
           >
             <rect
               x={0}
