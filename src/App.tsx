@@ -1024,12 +1024,78 @@ export default function App() {
               </button>
             </div>
             {draftKind === 'trap' && (
-              <figure className="trap-dims-figure">
-                <img
-                  src="/trap-dims.png"
-                  alt="Trapezoid finished dimensions: top width, bottom width, and height between the parallel edges"
-                  className="trap-dims-img"
-                />
+              <figure className="trap-dims-figure" aria-label="Trapezoid finished dimensions">
+                <svg
+                  className="trap-dims-svg"
+                  viewBox="0 0 320 260"
+                  role="img"
+                  aria-hidden="true"
+                >
+                  <title>Top width, bottom width, and height</title>
+                  {/* shape */}
+                  <polygon
+                    points="95,55 225,55 275,175 45,175"
+                    fill="#f5f5f5"
+                    stroke="#111"
+                    strokeWidth="2.5"
+                  />
+                  {/* top width */}
+                  <line x1="95" y1="38" x2="225" y2="38" stroke="#24285e" strokeWidth="2" />
+                  <line x1="95" y1="32" x2="95" y2="44" stroke="#24285e" strokeWidth="2" />
+                  <line x1="225" y1="32" x2="225" y2="44" stroke="#24285e" strokeWidth="2" />
+                  <text
+                    x="160"
+                    y="28"
+                    textAnchor="middle"
+                    fill="#24285e"
+                    fontSize="16"
+                    fontWeight="700"
+                    fontFamily="system-ui,sans-serif"
+                  >
+                    Top width
+                  </text>
+                  {/* bottom width */}
+                  <line x1="45" y1="198" x2="275" y2="198" stroke="#24285e" strokeWidth="2" />
+                  <line x1="45" y1="192" x2="45" y2="204" stroke="#24285e" strokeWidth="2" />
+                  <line x1="275" y1="192" x2="275" y2="204" stroke="#24285e" strokeWidth="2" />
+                  <text
+                    x="160"
+                    y="222"
+                    textAnchor="middle"
+                    fill="#24285e"
+                    fontSize="16"
+                    fontWeight="700"
+                    fontFamily="system-ui,sans-serif"
+                  >
+                    Bottom width
+                  </text>
+                  {/* height */}
+                  <line x1="292" y1="55" x2="292" y2="175" stroke="#24285e" strokeWidth="2" />
+                  <line x1="286" y1="55" x2="298" y2="55" stroke="#24285e" strokeWidth="2" />
+                  <line x1="286" y1="175" x2="298" y2="175" stroke="#24285e" strokeWidth="2" />
+                  <text
+                    x="308"
+                    y="120"
+                    textAnchor="middle"
+                    fill="#24285e"
+                    fontSize="16"
+                    fontWeight="700"
+                    fontFamily="system-ui,sans-serif"
+                    transform="rotate(90 308 120)"
+                  >
+                    Height
+                  </text>
+                  <text
+                    x="160"
+                    y="248"
+                    textAnchor="middle"
+                    fill="#444"
+                    fontSize="12"
+                    fontFamily="system-ui,sans-serif"
+                  >
+                    Finished sizes · cut adds 2×seam on each
+                  </text>
+                </svg>
               </figure>
             )}
             {draftKind === 'rect' ? (

@@ -662,15 +662,15 @@ button.clear-all {
 
 /* Trapezoid dimension diagram under shape toggle */
 .trap-dims-figure {
-  margin: 0.35rem 0 0.5rem;
-  padding: 0;
+  margin: 0.5rem 0 0.65rem;
+  padding: 0.5rem;
+  background: #fff;
+  border: 1px solid var(--sr-border, #ddd);
+  border-radius: 8px;
 }
-.trap-dims-img {
+.trap-dims-svg {
   display: block;
   width: 100%;
-  max-width: 100%;
+  min-height: 220px;
   height: auto;
-  border: 1px solid var(--sr-border, #ddd);
-  border-radius: 6px;
-  background: #fff;
 }
