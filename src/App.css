@@ -135,7 +135,7 @@ body { margin: 0; background: var(--sr-bg); }
   right: 0;
   z-index: 40;
   margin: 0;
-  padding: 0.55rem;
+  padding: 0.5rem;
   list-style: none;
   min-width: 16rem;
   max-height: min(70vh, 22rem);
@@ -146,7 +146,7 @@ body { margin: 0; background: var(--sr-bg); }
   box-shadow: 0 10px 28px rgba(0, 0, 0, 0.45);
   display: flex;
   flex-direction: column;
-  gap: 0.35rem;
+  gap: 0.25rem;
 }
 .calc-more-menu--mobile {
   left: auto;
@@ -159,18 +159,18 @@ body { margin: 0; background: var(--sr-bg); }
   justify-content: space-between;
   gap: 1rem;
   width: 100%;
-  border: 1px solid rgba(255, 255, 255, 0.14);
-  background: rgba(255, 255, 255, 0.06);
+  border: none;
+  background: transparent;
   color: rgba(255, 255, 255, 0.92);
   text-align: left;
   padding: 0.75rem 1rem;
-  min-height: 44px;
+  min-height: 2.75rem;
+  box-sizing: border-box;
   font-size: 0.82rem;
   font-weight: 600;
   cursor: not-allowed;
   white-space: nowrap;
-  border-radius: 8px;
-  box-sizing: border-box;
+  border-radius: 6px;
 }
 .calc-more-menu > li {
   list-style: none;
