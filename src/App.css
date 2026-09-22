@@ -811,15 +811,18 @@ button.clear-all {
   max-width: 100%;
   box-sizing: border-box;
 }
+/* Two columns; extra shapes wrap onto new rows for future additions */
 .row.shape-toggle button {
-  flex: 1 1 calc(33.333% - 0.3rem);
+  flex: 1 1 calc(50% - 0.2rem);
   min-width: 0;
-  padding: 0.4rem 0.3rem;
-  font-size: 0.78rem;
+  max-width: calc(50% - 0.2rem);
+  padding: 0.4rem 0.45rem;
+  font-size: 0.8rem;
   line-height: 1.2;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+  box-sizing: border-box;
 }
 
 
