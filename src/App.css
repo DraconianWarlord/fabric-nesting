@@ -390,7 +390,19 @@ button {
   color: var(--sr-text);
 }
 button:hover { background: #ececec; }
-button:disabled { opacity: 0.5; cursor: not-allowed; }
+button:disabled {
+  cursor: not-allowed;
+  opacity: 1;
+  background: #e2e2e2;
+  border-color: #e2e2e2;
+  color: #666666;
+}
+button.primary:disabled,
+button.auto-nest:disabled {
+  background: #d0d0d0;
+  border-color: #d0d0d0;
+  color: #333333;
+}
 button.active {
   background: #111;
   color: #fff;
@@ -629,10 +641,15 @@ button.clear-all {
     height: 100%;
     max-height: 100%;
     padding: 0.65rem;
-    overflow: auto;
+    overflow-x: hidden; /* bolt is fit-to-width; no accidental H scroll */
+    overflow-y: auto;
     -webkit-overflow-scrolling: touch;
     overscroll-behavior: contain;
-    touch-action: pan-x pan-y;
+    touch-action: pan-y;
+  }
+  .canvas-wrap .bolt {
+    max-width: 100%;
+    box-sizing: border-box;
   }
 
   .app-header-bar {

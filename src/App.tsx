@@ -336,7 +336,9 @@ export default function App() {
       const cs = getComputedStyle(el)
       const pad =
         parseFloat(cs.paddingLeft || '0') + parseFloat(cs.paddingRight || '0')
-      const available = Math.max(40, el.clientWidth - pad)
+      // .bolt has 2px border each side — leave room so fit-width never forces H scroll
+      const boltBorderX = 4
+      const available = Math.max(40, el.clientWidth - pad - boltBorderX)
       setPxPerIn(computeCanvasPxPerIn(available, fabricWidthIn))
     }
     update()
@@ -346,8 +348,8 @@ export default function App() {
   }, [fabricWidthIn])
 
   const boltHeightIn = Math.max(used + 12, 72)
-  const svgW = fabricWidthIn * pxPerIn + 2
-  const svgH = boltHeightIn * pxPerIn + 2
+  const svgW = fabricWidthIn * pxPerIn
+  const svgH = boltHeightIn * pxPerIn
 
   function display(inches: number) {
     const v = fromInches(inches, unit)

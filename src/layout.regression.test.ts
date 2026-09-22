@@ -59,4 +59,16 @@ describe('layout regressions', () => {
       expect(appCss).toMatch(new RegExp(`\\.${c.replace(/-/g, '\\-')}\\b`))
     }
   })
+
+  it('disabled primary/Auto-Nest uses opaque muted colors (not opacity wash)', () => {
+    expect(appCss).toMatch(/button\.primary:disabled[\s\S]*?color:\s*#333333/)
+    expect(appCss).not.toMatch(/button:disabled\s*\{\s*opacity:\s*0\.5/)
+  })
+
+  it('mobile bolt canvas kills accidental horizontal scroll', () => {
+    const mobile = appCss.match(/@media \(max-width: 800px\)\s*\{[\s\S]*?\n\}(?=\s*\/\*|\s*@media|\s*$)/)
+    expect(mobile, 'missing 800px media query').toBeTruthy()
+    expect(mobile![0]).toMatch(/\.canvas-wrap\s*\{[^}]*overflow-x:\s*hidden/)
+  })
+
 })
