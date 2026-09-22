@@ -36,7 +36,7 @@ import {
 } from './lib/geometry'
 import { wrapSvgText } from './lib/wrapSvgText'
 import { CalculatorNav, MobileMoreCalculators } from './CalculatorNav'
-import { SHOP, shopFabricYardsLabel } from './shopLinks'
+import { SHOP } from './shopLinks'
 import './App.css'
 
 /** Minimum px per fabric inch so a tiny pane still draws. No max — bolt fills the middle pane. */
@@ -761,19 +761,6 @@ export default function App() {
     return { verts, hors }
   }, [hasPattern, effectiveH, effectiveV, fabricWidthIn, boltHeightIn])
 
-  const disclaimer =
-    seamAllowanceIn > 0 ? (
-      <>
-        Estimate only. Double-check before cutting or ordering. Entered panel sizes are{' '}
-        <strong>finished sizes</strong>; cut size = finished + 2×seam allowance (
-        {display(seamAllowanceIn)} {unit} per side). Sailrite sells full yards.
-      </>
-    ) : (
-      <>
-        Estimate only. Double-check before cutting or ordering. Panel sizes are{' '}
-        <strong>cut sizes</strong> (seam allowance is 0). Sailrite sells full yards.
-      </>
-    )
 
   const draftSizes = draftCutSizes()
 
@@ -834,53 +821,6 @@ export default function App() {
         </div>
       </header>
 
-      <div className="disclaimer">{disclaimer}</div>
-      <div className="shop-strip" role="complementary" aria-label="Shop Sailrite">
-        <p className="shop-strip-lead">
-          {order > 0 ? (
-            <>
-              Ready to order about <strong>{order} yd</strong>? Get fabric, foam, thread, and tools
-              from Sailrite.
-            </>
-          ) : (
-            <>Nest your panels, then shop fabric and supplies at Sailrite.</>
-          )}
-        </p>
-        <div className="shop-strip-actions">
-          <a
-            className="shop-strip-primary"
-            href={SHOP.fabric}
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            {shopFabricYardsLabel(order)}
-          </a>
-          <a
-            className="shop-strip-link"
-            href={SHOP.tools}
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            Tools &amp; notions
-          </a>
-          <a
-            className="shop-strip-link"
-            href={SHOP.thread}
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            Thread
-          </a>
-          <a
-            className="shop-strip-link"
-            href={SHOP.foam}
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            Foam &amp; cushion supplies
-          </a>
-        </div>
-      </div>
       {actionHint && (
         <div className="action-hint" role="status">
           {actionHint}
